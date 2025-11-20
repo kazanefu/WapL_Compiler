@@ -1,0 +1,12 @@
+[package]
+name = "waplc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+inkwell = { version = "0.6.0", features = ["llvm14-0"] }
+clap = { version = "4", features = ["derive"] }
+
+[env]
+LLVM_SYS_140_PREFIX = "/usr/lib/llvm-14"
+LD_LIBRARY_PATH = "/usr/lib/llvm-14/lib:$LD_LIBRARY_PATH"

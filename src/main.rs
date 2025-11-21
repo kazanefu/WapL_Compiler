@@ -4,14 +4,14 @@ mod parser;
 
 use clap::Parser;
 use codegen::*;
-use inkwell::OptimizationLevel;
+//use inkwell::OptimizationLevel;
 use inkwell::context::Context;
 use lexer::*;
-use parser::*;
-use std::env;
+//use parser::*;
+//use std::env;
 use std::fs;
-use std::fs::File;
-use std::io::Write;
+//use std::fs::File;
+//use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 

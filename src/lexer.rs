@@ -58,7 +58,7 @@ impl Tokenizer {
         Some(ch)
     }
 
-    fn match_next(&mut self, expected: char) -> bool {
+    fn _match_next(&mut self, expected: char) -> bool {
         if self.peek() == Some(expected) {
             self.pos += 1;
             true
@@ -84,6 +84,8 @@ impl Tokenizer {
                 self.pos += 2;
                 while let Some(c) = self.peek() {
                     if c == '\n' {
+                        self.pos += 1;
+                        self.skip_comment();
                         break;
                     }
                     self.pos += 1;

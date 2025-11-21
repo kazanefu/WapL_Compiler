@@ -14,7 +14,7 @@ pub enum Expr {
     Point(Vec<Expr>),  //ワープに使うラベル
     Call { name: String, args: Vec<Expr> }, //関数呼び出し
     Warp { name: String, args: Vec<Expr> }, //warpto,warptoif
-    StructVal { name: String, args: Vec<Expr> }, //structの実体
+    StructVal { _name: String, _args: Vec<Expr> }, //structの実体
     TypeApply { base: String, args: Vec<Expr> }, //ptr:typeとかのbase:type
 }
 #[derive(Debug, Clone)]
@@ -36,7 +36,7 @@ pub struct Function {
 #[derive(Debug, Clone)]
 pub struct Struct {
     pub name: String,
-    pub return_type: Expr,
+    pub _return_type: Expr,
     pub args: Vec<(Expr, Expr)>, //(type,name)
 }
 
@@ -61,7 +61,7 @@ impl Parser {
     fn peek_back(&self) -> Option<&Token> {
         self.tokens.get(self.pos - 1)
     }
-    fn peek_front(&self) -> Option<&Token> {
+    fn _peek_front(&self) -> Option<&Token> {
         self.tokens.get(self.pos + 1)
     }
     fn no_return_next(&mut self) {
@@ -270,7 +270,7 @@ impl Parser {
         self.expect(&Token::Rsep(RSeparator::RBrace));
         Struct {
             name,
-            return_type,
+            _return_type:return_type,
             args,
         }
     }
@@ -381,7 +381,7 @@ impl Parser {
                 }
             }
         }
-        Expr::StructVal { name, args }
+        Expr::StructVal { _name:name, _args:args }
     }
     fn parse_call(&mut self, mut name: String) -> Expr {
         match self.next() {

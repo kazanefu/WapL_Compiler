@@ -190,9 +190,9 @@ impl<'ctx> Codegen<'ctx> {
             let field_name_string =
                 field_name_op.expect(&format!("Struct {}:None Field Name", stc.name));
             let llvm_type = self.llvm_type_from_expr(field_type_expr);
-            indx += 1;
             field_types.push(llvm_type);
             field_info.push((field_name_string.clone(), llvm_type, indx));
+            indx += 1;
         }
 
         // ③ 中身を設定

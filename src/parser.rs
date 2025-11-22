@@ -256,8 +256,9 @@ impl Parser {
             if *token_arg_type == Token::Rsep(RSeparator::RBrace) {
                 break;
             }
-            let arg_type = match self.next() {
-                Some(Token::Ident(s)) => Expr::Ident(s.clone()),
+            self.no_return_next();
+            let arg_type = match self.peek_back() {
+                Some(Token::Ident(s)) => self.parse_type_apply(s.clone()),//Expr::Ident(s.clone()),
                 other => panic!("expected arg type, got {:?}", other),
             };
             let arg_name = match self.next() {

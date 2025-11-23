@@ -157,7 +157,6 @@ impl Tokenizer {
                 }
             }
 
-
             return Token::StringLiteral(s);
         }
         if ch == '\'' {
@@ -166,7 +165,47 @@ impl Tokenizer {
                 if c == '\'' {
                     break;
                 }
-                s.push(c);
+                if c != '\\' {
+                    s.push(c);
+                } else {
+                    if self.match_next('n') {
+                        s.push('\n');
+                    } else if self.match_next('0') {
+                        s.push('\0');
+                    } else if self.match_next('\\') {
+                        s.push('\\');
+                    } else if self.match_next('r') {
+                        s.push('\r');
+                    } else if self.match_next('t') {
+                        s.push('\t');
+                    } else if self.match_next('"') {
+                        s.push('"');
+                    } else if self.match_next('x') {
+                        let h1 = self.next_char().unwrap();
+                        let h2 = self.next_char().unwrap();
+                        let byte = u8::from_str_radix(&format!("{}{}", h1, h2), 16).unwrap();
+                        s.push(byte as char);
+                    } else if self.match_next('u') {
+                        if self.match_next('{') {
+                            let mut hex = String::new();
+
+                            while let Some(cc) = self.next_char() {
+                                if cc == '}' {
+                                    break;
+                                }
+                                hex.push(cc);
+                            }
+                            let cp = u32::from_str_radix(&hex, 16).unwrap();
+                            let cch = char::from_u32(cp).unwrap();
+                            s.push(cch);
+                        } else {
+                            s.push('\\');
+                            s.push('u');
+                        }
+                    } else {
+                        s.push(c);
+                    }
+                }
             }
             let c = s.chars().collect::<Vec<_>>()[0];
             return Token::CharLiteral(c);

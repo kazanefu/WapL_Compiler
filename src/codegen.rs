@@ -724,6 +724,15 @@ impl<'ctx> Codegen<'ctx> {
                     self.build_println_from_ptr(str_ptr); // 新しく作る printf 呼び出し
                     None
                 }
+                "print" => {
+                    let s_val = self.compile_expr(&args[0], variables).unwrap();
+                    let str_ptr = match s_val {
+                        BasicValueEnum::PointerValue(p) => p,
+                        _ => panic!("println expects string pointer"),
+                    };
+                    self.build_print_from_ptr(str_ptr); // 新しく作る printf 呼び出し
+                    None
+                }
                 "format" => {
                     let fmt_val = self.compile_expr(&args[0], variables).unwrap();
                     // 残り args はフォーマット引数
@@ -1408,6 +1417,36 @@ impl<'ctx> Codegen<'ctx> {
             .builder
             .build_global_string_ptr(
                 "%s\n", // 文字列を表示して改行
+                &format!("println_fmt_{}", self.str_counter),
+            )
+            .unwrap();
+        self.str_counter += 1;
+
+        // printf 呼び出し用引数を作成
+        let args: &[BasicMetadataValueEnum] = &[
+            global_str_with_newline.as_pointer_value().into(),
+            str_ptr.into(),
+        ];
+
+        // printf 呼び出し
+        self.builder.build_call(printf_fn, args, "printf").unwrap();
+    }
+    pub fn build_print_from_ptr(&mut self, str_ptr: PointerValue<'ctx>) {
+        // printf 関数を取得または作成
+        let printf_fn = match self.module.get_function("printf") {
+            Some(f) => f,
+            None => {
+                let i8ptr_type = self.context.i8_type().ptr_type(Default::default());
+                let fn_type = self.context.i32_type().fn_type(&[i8ptr_type.into()], true);
+                self.module.add_function("printf", fn_type, None)
+            }
+        };
+
+        // 改行用の新しい文字列リテラルを作る
+        let global_str_with_newline = self
+            .builder
+            .build_global_string_ptr(
+                "%s", // 文字列を表示して改行
                 &format!("println_fmt_{}", self.str_counter),
             )
             .unwrap();

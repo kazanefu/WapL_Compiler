@@ -156,12 +156,7 @@ impl Tokenizer {
                     }
                 }
             }
-            s = s.replace("\\n", "\n");
-            s = s.replace("\\0", "\0");
-            s = s.replace("\\\\", "\\");
-            s = s.replace("\\r", "\r");
-            s = s.replace("\\t", "\t");
-            s = s.replace("\\'", "\'");
+
 
             return Token::StringLiteral(s);
         }

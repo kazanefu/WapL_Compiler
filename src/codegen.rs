@@ -260,6 +260,13 @@ impl<'ctx> Codegen<'ctx> {
                 self.builder.build_return(Some(&ret_val)).unwrap();
                 //None // 既に return しているので上位に値を返す必要なし
             }
+            Expr::Loopif { name, cond, body } => {
+                if cond.len() != 1 {
+                    panic!("Loopif conditions must have exactly one value");
+                }
+
+                self.compile_loopif(name, &cond[0], body, variables);
+            }
             _ => unimplemented!(),
         }
     }
@@ -1855,7 +1862,10 @@ impl<'ctx> Codegen<'ctx> {
                     panic!("index: one of args must be pointer");
                 }
             }
-
+            Expr::Call { name: _, args: _ } => {
+                let p_val = self.compile_expr(expr, variables).unwrap();
+                p_val.into_pointer_value()
+            }
             _ => panic!("Left-hand side must be a pointer or val(ptr)"),
         }
     }
@@ -2159,6 +2169,76 @@ impl<'ctx> Codegen<'ctx> {
         let i8ptr_type = context.i8_type().ptr_type(AddressSpace::default());
         let scanf_type = context.i32_type().fn_type(&[i8ptr_type.into()], true);
         self.module.add_function("scanf", scanf_type, None);
+    }
+
+    fn compile_loopif(
+        &mut self,
+        name: &str,
+        cond: &Expr,
+        body: &Vec<Stmt>,
+        variables: &mut HashMap<String, PointerValue<'ctx>>,
+    ) {
+        let mut inloop_variables = variables.clone();
+        let current_fn = self.current_fn.as_mut().expect("Not in a function");
+        let loop_start = self
+            .context
+            .append_basic_block(current_fn.function, &format!("loop_start-{}", name));//これだけはコード内のwarptoによってアクセスさせない
+        self.builder.build_unconditional_branch(loop_start).unwrap();//未解決ジャンプ解決から帰ってくるためのloop-start
+        let cond_block = self
+            .context
+            .append_basic_block(current_fn.function, &format!("continue-{}", name));
+        let body_block = self
+            .context
+            .append_basic_block(current_fn.function, &format!("no_judge_continue-{}", name));
+        let end_block = self
+            .context
+            .append_basic_block(current_fn.function, &format!("break-{}", name));
+        // ラベル登録
+        current_fn.labels.insert(format!("continue-{}", name), cond_block);
+        current_fn.labels.insert(format!("no_judge_continue-{}", name), body_block);
+        current_fn.labels.insert(format!("break-{}", name), end_block);
+        // 未解決ジャンプを処理
+        if let Some(jumps) = current_fn.unresolved.remove(&format!("continue-{}", name)) {
+            for pending in jumps {
+                self.builder.position_at_end(pending.from);
+                self.builder.build_unconditional_branch(cond_block).unwrap();
+            }
+        }
+        if let Some(jumps) = current_fn.unresolved.remove(&format!("no_judge_continue-{}", name)) {
+            for pending in jumps {
+                self.builder.position_at_end(pending.from);
+                self.builder.build_unconditional_branch(body_block).unwrap();
+            }
+        }
+        if let Some(jumps) = current_fn.unresolved.remove(&format!("break-{}", name)) {
+            for pending in jumps {
+                self.builder.position_at_end(pending.from);
+                self.builder.build_unconditional_branch(end_block).unwrap();
+            }
+        }
+        self.builder.position_at_end(loop_start);//ループの先頭に必ず行く
+        // 先に条件ブロックへジャンプ
+        self.builder.build_unconditional_branch(cond_block).unwrap();
+        // 条件ブロック
+        self.builder.position_at_end(cond_block);
+        let cond_int_value = match self.compile_expr(&cond, &mut inloop_variables) {
+            Some(BasicValueEnum::IntValue(i)) => i,
+            _ => panic!("Loopif conditions must have exactly i1 value"),
+        };
+        //条件分岐
+        self.builder
+            .build_conditional_branch(cond_int_value, body_block, end_block)
+            .unwrap();
+        // 本体ブロック
+        self.builder.position_at_end(body_block);
+        //本体処理
+        for stmt in body {
+            let _value = self.compile_stmt(&stmt, variables);
+        }
+        self.builder.build_unconditional_branch(cond_block).unwrap(); // 再度条件へジャンプ
+
+        // 終了ブロック
+        self.builder.position_at_end(end_block);
     }
 }
 fn float_bit_width(ft: FloatType) -> u32 {

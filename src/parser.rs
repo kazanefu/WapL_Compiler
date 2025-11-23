@@ -16,6 +16,7 @@ pub enum Expr {
     Warp { name: String, args: Vec<Expr> }, //warpto,warptoif
     StructVal { _name: String, _args: Vec<Expr> }, //structの実体
     TypeApply { base: String, args: Vec<Expr> }, //ptr:typeとかのbase:type
+    Loopif{ name: String,cond:Vec<Expr>,body:Vec<Stmt>}
 }
 #[derive(Debug, Clone)]
 pub struct Stmt {
@@ -316,6 +317,7 @@ impl Parser {
             Some(Token::Point) => Expr::Point(vec![self.parse_expr()]),
             Some(Token::Warpto) => self.parse_call("warpto".to_string()),
             Some(Token::WarptoIf) => self.parse_call("warptoif".to_string()),
+            Some(Token::LoopIf) => self.parse_loopif(),
             Some(Token::ArrayCall) => self.parse_call("Array".to_string()),
             Some(Token::Ident(name)) => {
                 let front = self.peek();
@@ -422,5 +424,69 @@ impl Parser {
         };
         self.consume_semicolon();
         Expr::Call { name, args }
+    }
+    fn parse_loopif(&mut self) -> Expr {
+        //self.expect(&Token::LoopIf);
+        self.expect(&Token::Colon);
+        
+        // name
+        let name = match self.next() {
+            Some(Token::Ident(s)) => s.clone(),
+            _ => {self.no_return_back();"loop".to_string()},
+        };
+
+        // ()
+        match self.next() {
+            Some(Token::Lsep(LSeparator::LParen)) => {}
+            other => panic!(
+                "expected '(' after loopif name {:?}, got {:?}",
+                name, other
+            ),
+        }
+
+        let mut args = Vec::new();
+
+        loop {
+            match self.peek() {
+                Some(Token::Rsep(RSeparator::RParen)) => {
+                    self.next();
+                    break;
+                }
+                _ => {
+                    let arg = self.parse_expr();
+                    args.push(arg);
+                    self.consume_comma();
+                }
+            }
+        }
+        
+        // { statements }
+        self.expect(&Token::Lsep(LSeparator::LBrace));
+        self.consume_semicolon(); //self.expect(&Token::Semicolon);
+
+        let mut stmts = Vec::new();
+
+        while let Some(tok) = self.peek() {
+            if *tok == Token::Rsep(RSeparator::RBrace) {
+                break;
+            }
+            // optional ;
+            if let Some(Token::Semicolon) = self.peek() {
+                self.next();
+            }
+
+            let expr = self.parse_expr();
+            stmts.push(Stmt { expr });
+
+            // optional ;
+            if let Some(Token::Semicolon) = self.peek() {
+                self.next();
+            }
+        }
+
+        self.expect(&Token::Rsep(RSeparator::RBrace));
+        self.consume_semicolon(); //self.expect(&Token::Semicolon);
+
+        Expr::Loopif { name, cond: args, body:stmts }
     }
 }

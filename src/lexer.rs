@@ -15,6 +15,7 @@ pub enum Token {
     WarptoIf,
     Return,
     Import,
+    LoopIf,
 
     // signs & operators
     Comma,
@@ -274,7 +275,8 @@ impl Tokenizer {
                 "false" => Token::BoolLiteral(false),
                 "return" => Token::Return,
                 "Array" => Token::ArrayCall,
-                "import" => Token::Import,
+                "import"|"use" => Token::Import,
+                "loopif" => Token::LoopIf,
                 _ => Token::Ident(s),
             };
         }

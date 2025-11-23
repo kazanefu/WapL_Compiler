@@ -26,12 +26,12 @@ pub enum Token {
     EOF,
 }
 #[derive(Debug, Clone, PartialEq)]
-pub enum LSeparator{
+pub enum LSeparator {
     LParen,
     LBrace,
 }
 #[derive(Debug, Clone, PartialEq)]
-pub enum RSeparator{
+pub enum RSeparator {
     RParen,
     RBrace,
 }
@@ -58,7 +58,7 @@ impl Tokenizer {
         Some(ch)
     }
 
-    fn _match_next(&mut self, expected: char) -> bool {
+    fn match_next(&mut self, expected: char) -> bool {
         if self.peek() == Some(expected) {
             self.pos += 1;
             true
@@ -86,6 +86,7 @@ impl Tokenizer {
                     if c == '\n' {
                         self.pos += 1;
                         self.skip_comment();
+                        self.skip_whitespace();
                         break;
                     }
                     self.pos += 1;
@@ -113,12 +114,58 @@ impl Tokenizer {
                 if c == '"' {
                     break;
                 }
-                s.push(c);
+                if c != '\\' {
+                    s.push(c);
+                } else {
+                    if self.match_next('n') {
+                        s.push('\n');
+                    } else if self.match_next('0') {
+                        s.push('\0');
+                    } else if self.match_next('\\') {
+                        s.push('\\');
+                    } else if self.match_next('r') {
+                        s.push('\r');
+                    } else if self.match_next('t') {
+                        s.push('\t');
+                    } else if self.match_next('"') {
+                        s.push('"');
+                    } else if self.match_next('x') {
+                        let h1 = self.next_char().unwrap();
+                        let h2 = self.next_char().unwrap();
+                        let byte = u8::from_str_radix(&format!("{}{}", h1, h2), 16).unwrap();
+                        s.push(byte as char);
+                    } else if self.match_next('u') {
+                        if self.match_next('{') {
+                            let mut hex = String::new();
+
+                            while let Some(cc) = self.next_char() {
+                                if cc == '}' {
+                                    break;
+                                }
+                                hex.push(cc);
+                            }
+                            let cp = u32::from_str_radix(&hex, 16).unwrap();
+                            let cch = char::from_u32(cp).unwrap();
+                            s.push(cch);
+                        } else {
+                            s.push('\\');
+                            s.push('u');
+                        }
+                    } else {
+                        s.push(c);
+                    }
+                }
             }
             s = s.replace("\\n", "\n");
+            s = s.replace("\\0", "\0");
+            s = s.replace("\\\\", "\\");
+            s = s.replace("\\r", "\r");
+            s = s.replace("\\t", "\t");
+            s = s.replace("\\'", "\'");
+
             return Token::StringLiteral(s);
         }
-        if ch == '\''{
+        if ch == '\'' {
             let mut s = String::new();
             while let Some(c) = self.next_char() {
                 if c == '\'' {
@@ -131,26 +178,51 @@ impl Tokenizer {
         }
 
         // ----- Number -----
-        if ch.is_ascii_digit()||ch == '-' {
+        if ch.is_ascii_digit() || ch == '-' {
             let mut s = ch.to_string();
             let mut is_float = false;
             while let Some(c) = self.peek() {
                 if c.is_ascii_digit() || c == '.' {
-                    if c == '.'{is_float = true}
+                    if c == '.' {
+                        is_float = true
+                    }
                     s.push(c);
                     self.pos += 1;
                 } else {
                     break;
                 }
             }
-            if s != "-"{if is_float{return Token::FloatNumber(s.parse::<f64>().unwrap());}else{return Token::IntNumber(s.parse::<i64>().unwrap());}}
+            if s != "-" {
+                if is_float {
+                    return Token::FloatNumber(s.parse::<f64>().unwrap());
+                } else {
+                    return Token::IntNumber(s.parse::<i64>().unwrap());
+                }
+            }
         }
 
         // ----- Identifier / Keyword -----
-        if  !ch.is_ascii_digit() && ch != ',' && ch != ';'&& ch != '{'&& ch != '}'&& ch != '('&& ch != ')'&& ch != ':'{
+        if !ch.is_ascii_digit()
+            && ch != ','
+            && ch != ';'
+            && ch != '{'
+            && ch != '}'
+            && ch != '('
+            && ch != ')'
+            && ch != ':'
+        {
             let mut s = ch.to_string();
             while let Some(c) = self.peek() {
-                if c != ',' && c != ';'&& c != '{'&& c != '}'&& c != '('&& c != ')'&& c != ' '&& c != ':'&& c != '\n'{
+                if c != ','
+                    && c != ';'
+                    && c != '{'
+                    && c != '}'
+                    && c != '('
+                    && c != ')'
+                    && c != ' '
+                    && c != ':'
+                    && c != '\n'
+                {
                     s.push(c);
                     self.pos += 1;
                 } else {
@@ -160,13 +232,13 @@ impl Tokenizer {
 
             return match s.as_str() {
                 "fn" => Token::Fn,
-                "struct"=> Token::Struct,
+                "struct" => Token::Struct,
                 "point" => Token::Point,
                 "warpto" => Token::Warpto,
                 "warptoif" => Token::WarptoIf,
                 "true" => Token::BoolLiteral(true),
                 "false" => Token::BoolLiteral(false),
-                "return" =>Token::Return,
+                "return" => Token::Return,
                 "Array" => Token::ArrayCall,
                 "import" => Token::Import,
                 _ => Token::Ident(s),

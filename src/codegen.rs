@@ -1052,7 +1052,7 @@ impl<'ctx> Codegen<'ctx> {
                         .build_call(func, &compiled_args, "calltmp")
                         .unwrap();
                     if func.get_type().get_return_type().is_some() {
-                        Some(call_site.try_as_basic_value().left().unwrap())
+                        Some(call_site.try_as_basic_value().basic().unwrap())
                     } else {
                         None
                     }
@@ -1087,7 +1087,7 @@ impl<'ctx> Codegen<'ctx> {
                     .build_call(strcmp_fn, &[a.into(), b.into()], "strcmp_result")
                     .unwrap()
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .unwrap()
                     .into_int_value();
 
@@ -1129,7 +1129,7 @@ impl<'ctx> Codegen<'ctx> {
                     .build_call(strcmp_fn, &[a.into(), b.into()], "strcmp_result")
                     .unwrap()
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .unwrap()
                     .into_int_value();
 
@@ -1171,7 +1171,7 @@ impl<'ctx> Codegen<'ctx> {
                     .build_call(strcmp_fn, &[a.into(), b.into()], "strcmp_result")
                     .unwrap()
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .unwrap()
                     .into_int_value();
 
@@ -1213,7 +1213,7 @@ impl<'ctx> Codegen<'ctx> {
                     .build_call(strcmp_fn, &[a.into(), b.into()], "strcmp_result")
                     .unwrap()
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .unwrap()
                     .into_int_value();
 
@@ -1255,7 +1255,7 @@ impl<'ctx> Codegen<'ctx> {
                     .build_call(strcmp_fn, &[a.into(), b.into()], "strcmp_result")
                     .unwrap()
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .unwrap()
                     .into_int_value();
 
@@ -1297,7 +1297,7 @@ impl<'ctx> Codegen<'ctx> {
                     .build_call(strcmp_fn, &[a.into(), b.into()], "strcmp_result")
                     .unwrap()
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .unwrap()
                     .into_int_value();
 
@@ -1494,7 +1494,7 @@ impl<'ctx> Codegen<'ctx> {
             .build_call(scanf_fn, &call_args, "scanf")
             .unwrap()
             .try_as_basic_value()
-            .left()
+            .basic()
             .unwrap();
 
         ret.into_int_value()
@@ -1576,7 +1576,7 @@ impl<'ctx> Codegen<'ctx> {
                     .unwrap();
 
                 call.try_as_basic_value()
-                    .left()
+                    .basic()
                     .unwrap()
                     .into_float_value()
                     .as_basic_value_enum()
@@ -1601,7 +1601,7 @@ impl<'ctx> Codegen<'ctx> {
                     .unwrap();
 
                 call.try_as_basic_value()
-                    .left()
+                    .basic()
                     .unwrap()
                     .into_float_value()
                     .as_basic_value_enum()
@@ -1674,7 +1674,7 @@ impl<'ctx> Codegen<'ctx> {
                     )
                     .unwrap()
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .unwrap();
 
                 result.into_int_value()
@@ -1706,7 +1706,7 @@ impl<'ctx> Codegen<'ctx> {
                     .build_call(atof, &[ptr.into()], "str_to_f64")
                     .unwrap()
                     .try_as_basic_value()
-                    .left()
+                    .basic()
                     .unwrap();
 
                 result.into_float_value()
@@ -1925,7 +1925,7 @@ impl<'ctx> Codegen<'ctx> {
             .build_call(malloc_fn, &[size.into()], "malloc_call")
             .unwrap()
             .try_as_basic_value()
-            .left()
+            .basic()
             .unwrap()
             .into_pointer_value();
 
@@ -1957,7 +1957,7 @@ impl<'ctx> Codegen<'ctx> {
             .build_call(realloc_fn, &[old_ptr.into(), size.into()], "realloc_call")
             .unwrap()
             .try_as_basic_value()
-            .left()
+            .basic()
             .unwrap()
             .into_pointer_value();
 

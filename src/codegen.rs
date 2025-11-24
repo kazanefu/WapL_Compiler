@@ -212,7 +212,7 @@ impl<'ctx> Codegen<'ctx> {
                     let cond: BasicValueEnum = self.compile_expr(&args[0], variables).unwrap();
                     let cond_i1 = match cond {
                         BasicValueEnum::IntValue(v) if v.get_type().get_bit_width() == 1 => v,
-                        _ => panic!("&& requires boolean (i1) values"),
+                        _ => panic!("warptoif condition requires boolean (i1) values"),
                     };
                     let label_name1 = match &args[1] {
                         Expr::Ident(s) => Some(s.as_str()),
@@ -244,7 +244,7 @@ impl<'ctx> Codegen<'ctx> {
             }
             Expr::Loopif { name, cond, body } => {
                 if cond.len() != 1 {
-                    panic!("Loopif conditions must have exactly one value");
+                    panic!("Loopif:{} conditions must have exactly one value",name);
                 }
 
                 self.compile_loopif(name, &cond[0], body, variables);
@@ -273,7 +273,7 @@ impl<'ctx> Codegen<'ctx> {
             }
 
             Expr::Ident(name) => {
-                let alloca = variables.get(name).expect("Undefined variable");
+                let alloca = variables.get(name).expect(&format!("Undefined variable {}",name));
                 self.builder.build_load(*alloca, name).unwrap().into()
             }
 
@@ -456,12 +456,12 @@ impl<'ctx> Codegen<'ctx> {
                         .collect();
                     let val_l = match compiled_args[0] {
                         BasicValueEnum::FloatValue(v) => v,
-                        _ => panic!("&& f values"),
+                        _ => panic!("{} require f values",name.as_str()),
                     };
                     let val_r = if compiled_args.len() > 1 {
                         match compiled_args[1] {
                             BasicValueEnum::FloatValue(v) => Some(v),
-                            _ => panic!("expected float"),
+                            _ => panic!("at {} expected float",name.as_str()),
                         }
                     } else {
                         None
@@ -523,11 +523,11 @@ impl<'ctx> Codegen<'ctx> {
                         .collect();
                     let val_l = match compiled_args[0] {
                         BasicValueEnum::IntValue(v) => v,
-                        _ => panic!("&& i values"),
+                        _ => panic!("{} require i values",name.as_str()),
                     };
                     let val_r = match compiled_args[1] {
                         BasicValueEnum::IntValue(v) => v,
-                        _ => panic!("&& i values"),
+                        _ => panic!("{} require i values",name.as_str()),
                     };
                     match name.as_str() {
                         "&" => Some(
@@ -579,11 +579,11 @@ impl<'ctx> Codegen<'ctx> {
                         .collect();
                     let lhs_i1 = match compiled_args[0] {
                         BasicValueEnum::IntValue(v) if v.get_type().get_bit_width() == 1 => v,
-                        _ => panic!("&& requires boolean (i1) values"),
+                        _ => panic!("{} require bool values",name.as_str()),
                     };
                     let rhs_i1 = match compiled_args[1] {
                         BasicValueEnum::IntValue(v) if v.get_type().get_bit_width() == 1 => v,
-                        _ => panic!("&& requires boolean (i1) values"),
+                        _ => panic!("{} require bool values",name.as_str()),
                     };
                     let v = match name.as_str() {
                         "&&" | "and" => Some(
@@ -612,7 +612,7 @@ impl<'ctx> Codegen<'ctx> {
                         .collect();
                     let val_i1 = match compiled_args[0] {
                         BasicValueEnum::IntValue(v) /*if v.get_type().get_bit_width() == 1 */=> v,
-                        _ => panic!("&& requires boolean (i1) values"),
+                        _ => panic!("{} require bool values",name.as_str()),
                     };
                     Some(
                         self.builder
@@ -690,7 +690,7 @@ impl<'ctx> Codegen<'ctx> {
                     let s_val = self.compile_expr(&args[0], variables).unwrap();
                     let str_ptr = match s_val {
                         BasicValueEnum::PointerValue(p) => p,
-                        _ => panic!("println expects string pointer"),
+                        _ => panic!("print expects string pointer"),
                     };
                     self.build_print_from_ptr(str_ptr); // 新しく作る printf 呼び出し
                     None
@@ -825,7 +825,7 @@ impl<'ctx> Codegen<'ctx> {
                 "realloc" => {
                     let ptr = match self.compile_expr(&args[0], variables).unwrap() {
                         BasicValueEnum::PointerValue(p) => p,
-                        _ => panic!("realloc arg0 is pointer"),
+                        _ => panic!("realloc expects (ptr,size,type)"),
                     };
                     let size_enum = self.compile_expr(&args[1], variables).unwrap();
                     let size = match size_enum {
@@ -2195,6 +2195,7 @@ impl<'ctx> Codegen<'ctx> {
         // 終了ブロック
         self.builder.position_at_end(end_block);
     }
+
 }
 fn float_bit_width(ft: FloatType) -> u32 {
     let printed = ft.print_to_string(); // 所有権を保持する

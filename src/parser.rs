@@ -185,7 +185,7 @@ impl Parser {
             }
             self.no_return_next();
             let arg_type = match self.peek_back() {
-                Some(Token::Ident(s)) => self.parse_type_apply(s.clone()), //Expr::Ident(s.clone()),
+                Some(Token::Ident(s)) => self.parse_type_apply(s.clone()),
                 other => panic!("expected arg type, got {:?}", other),
             };
             let arg_name = match self.next() {
@@ -247,7 +247,7 @@ impl Parser {
         // struct name
         let (name, return_type) = match self.next() {
             Some(Token::Ident(s)) => (s.clone(), Expr::Ident(s.clone())),
-            other => panic!("expected function name, got {:?}", other),
+            other => panic!("expected struct name, got {:?}", other),
         };
         self.expect(&Token::Lsep(LSeparator::LBrace));
         self.consume_semicolon();
@@ -361,7 +361,7 @@ impl Parser {
         match self.next() {
             Some(Token::Lsep(LSeparator::LBrace)) => {}
             other => panic!(
-                "expected '(' after function name {:?}, got {:?}",
+                "expected '{{' after function name {:?}, got {:?}",
                 name, other
             ),
         }

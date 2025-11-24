@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 inkwell = { version = "0.7.1", features = ["llvm14-0"] }
-clap = { version = "4.5.53", features = ["derive"] }
+clap = { version = "4", features = ["derive"] }
 
 [env]
 LLVM_SYS_140_PREFIX = "/usr/lib/llvm-14"

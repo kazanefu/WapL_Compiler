@@ -18,9 +18,9 @@ struct PendingJump<'ctx> {
 }
 
 struct FunctionContext<'ctx> {
-    function: FunctionValue<'ctx>, // ← 必須！
-    labels: HashMap<String, BasicBlock<'ctx>>,
-    unresolved: HashMap<String, Vec<PendingJump<'ctx>>>,
+    function: FunctionValue<'ctx>, 
+    labels: HashMap<String, BasicBlock<'ctx>>,//labels(already exist)
+    unresolved: HashMap<String, Vec<PendingJump<'ctx>>>,//labels(unresolved)
 }
 
 pub struct Codegen<'ctx> {
@@ -29,7 +29,7 @@ pub struct Codegen<'ctx> {
     pub builder: Builder<'ctx>,
     pub struct_types: HashMap<String, StructType<'ctx>>,
     pub struct_fields: HashMap<String, Vec<(String, BasicTypeEnum<'ctx>, u32)>>,
-    str_counter: usize,
+    str_counter: usize,//global str counter
     current_fn: Option<FunctionContext<'ctx>>,
 }
 
@@ -45,12 +45,13 @@ impl<'ctx> Codegen<'ctx> {
             struct_types: HashMap::new(),
             struct_fields: HashMap::new(),
             str_counter: 0,
-            current_fn: None, //Some(FunctionContext { labels: HashMap::new() ,unresolved:HashMap::new()}),
+            current_fn: None,
         };
-        this.init_external_functions(); // ← ここで登録！  
+        this.init_external_functions(); // declare C functions  
         this
     }
 
+    //compile entire ast
     pub fn compile_program(&mut self, program: Program) {
         for func in program.functions {
             match func {
@@ -66,69 +67,51 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     fn compile_function(&mut self, func: Function) {
-        // --- 戻り値型 ---
+        // --- type of return value ---
         let return_type_is_void = matches!(func.return_type, Expr::Ident(ref s) if s == "void");
 
         let return_type_enum = if return_type_is_void {
             None
         } else {
             Some(self.llvm_type_from_expr(&func.return_type))
-            // Some(match &func.return_type {
-            //     Expr::Ident(name) => {
-            //         if let Some(st) = self.struct_types.get(name) {
-            //             st.as_basic_type_enum()
-            //         } else {
-            //             match name.as_str() {
-            //                 "i32" => self.context.i32_type().into(),
-            //                 "i64" => self.context.i64_type().into(),
-            //                 "f32" => self.context.f32_type().into(),
-            //                 "f64" => self.context.f64_type().into(),
-            //                 "bool" => self.context.bool_type().into(),
-            //                 "char" => self.context.i8_type().into(),
-            //                 _ => panic!("Unknown return type: {}", name),
-            //             }
-            //         }
-            //     }
-            //     _ => panic!("Return type must be identifier"),
-            // })
         };
 
-        // --- 引数型 ---
+        // --- type of arguments ---
         let arg_types: Vec<BasicTypeEnum> = func
             .args
             .iter()
             .map(|(ty, _)| self.llvm_type_from_expr(ty))
             .collect();
 
-        // --- Metadata 型に変換 ---
+        // ---convert to Metadata type ---
         let arg_types_meta: Vec<BasicMetadataTypeEnum> =
             arg_types.iter().map(|t| (*t).into()).collect();
 
-        // --- LLVM 関数型作成 ---
+        // --- LLVM gen function ---
         let fn_type = if return_type_is_void {
             self.context.void_type().fn_type(&arg_types_meta, false)
         } else {
             return_type_enum.unwrap().fn_type(&arg_types_meta, false)
         };
 
-        // --- 関数追加 ---
+        // --- add function ---
         let llvm_func = self.module.add_function(&func.name, fn_type, None);
         let entry = self.context.append_basic_block(llvm_func, "entry");
         self.builder.position_at_end(entry);
 
-        // --- 引数を alloca して初期化 ---
+        // --- alloca & initialize args ---
         let mut variables: HashMap<String, PointerValue<'ctx>> = HashMap::new();
         for (i, (_ty, arg_expr)) in func.args.iter().enumerate() {
             let param = llvm_func.get_nth_param(i as u32).unwrap();
 
-            // 名前を取り出す（Expr::Ident 前提）
+            // get arg names (Expr::Ident(name))
             let arg_name = match arg_expr {
                 Expr::Ident(name) => name.as_str(),
                 _ => panic!("Function argument name must be identifier"),
             };
             param.set_name(arg_name);
 
-            // struct 型でも基本は alloca して格納
+            // alloca anyway
             let alloca = self
                 .builder
                 .build_alloca(param.get_type(), arg_name)
@@ -136,7 +119,7 @@ impl<'ctx> Codegen<'ctx> {
             self.builder.build_store(alloca, param).unwrap();
             variables.insert(arg_name.to_string(), alloca);
         }
-        //戻り値をalloca
+        //alloca return value
         let _ret_alloca = if !return_type_is_void {
             Some(
                 self.builder
@@ -152,12 +135,10 @@ impl<'ctx> Codegen<'ctx> {
             unresolved: HashMap::new(),
         });
 
-        // --- 関数本体 ---
+        // --- function body ---
         for stmt in func.body {
             let _value = self.compile_stmt(&stmt, &mut variables);
-            // if let Some(ret) = &ret_alloca {
-            //     self.builder.build_store((*ret).unwrap(), value);
-            // }
+
         }
 
         // --- 仮の戻り値 ---
@@ -168,6 +149,7 @@ impl<'ctx> Codegen<'ctx> {
             // let zero = self.context.i32_type().const_int(0, false);
             // self.builder.build_return(Some(&zero)).unwrap();
         }
+        //現在の関数から出る
         self.current_fn = None;
     }
 
@@ -175,10 +157,10 @@ impl<'ctx> Codegen<'ctx> {
         if self.struct_types.contains_key(&stc.name) {
             panic!("Struct '{}' already defined", stc.name);
         }
-        // ① Opaque StructType を作成（中身は後でセット）
+        // Opaque StructType を作成（中身は後でセット）
         let struct_type = self.context.opaque_struct_type(&stc.name);
 
-        // ② フィールド型を LLVM 型に変換して格納
+        // フィールド型を LLVM 型に変換して格納
         let mut field_types = Vec::new();
         let mut field_info = Vec::new();
         let mut indx: u32 = 0;
@@ -195,7 +177,7 @@ impl<'ctx> Codegen<'ctx> {
             indx += 1;
         }
 
-        // ③ 中身を設定
+        // 中身を設定
         struct_type.set_body(&field_types, false);
         self.struct_types.insert(stc.name.clone(), struct_type);
         self.struct_fields.insert(stc.name.clone(), field_info);
@@ -208,7 +190,7 @@ impl<'ctx> Codegen<'ctx> {
     fn compile_stmt(&mut self, stmt: &Stmt, variables: &mut HashMap<String, PointerValue<'ctx>>) {
         match &stmt.expr {
             Expr::IntNumber(_) | Expr::FloatNumber(_) | Expr::Call { .. } | Expr::Ident(_) => {
-                // 値の計算は compile_expr に任せる
+                // compile_expr
                 self.compile_expr(&stmt.expr, variables);
             }
             Expr::Point(labels) => {
@@ -318,27 +300,6 @@ impl<'ctx> Codegen<'ctx> {
                     };
 
                     let llvm_type: BasicTypeEnum = self.llvm_type_from_expr(&args[2]);
-                    // let type_name = match &args[2] {
-                    //     Expr::Ident(s) => s.as_str(),
-                    //     _ => panic!("let: third arg must be type name"),
-                    // };
-
-                    // // 型を決定
-                    // let llvm_type: BasicTypeEnum =
-                    //     if let Some(st) = self.struct_types.get(type_name) {
-                    //         st.as_basic_type_enum()
-                    //     } else {
-                    //         match type_name {
-                    //             "i32" => self.context.i32_type().into(),
-                    //             "i64" => self.context.i64_type().into(),
-                    //             "f32" => self.context.f32_type().into(),
-                    //             "f64" => self.context.f64_type().into(),
-                    //             "bool" => self.context.bool_type().into(),
-                    //             "char" => self.context.i8_type().into(),
-                    //             "ptr" => self.context.i8_type().ptr_type(Default::default()).into(),
-                    //             _ => panic!("Unknown type: {}", type_name),
-                    //         }
-                    //     };
 
                     // 初期値がある場合
                     let init_val_exist = match &args[1] {
@@ -377,16 +338,10 @@ impl<'ctx> Codegen<'ctx> {
                         _ => {
                             let value = self.compile_expr(&args[1], variables).unwrap();
                             let alloca = self.get_pointer_expr(&args[0], variables);
-                            //let alloca = variables.get(var_name).expect("Undefined variable");
                             self.builder.build_store(alloca, value).unwrap();
                             Some(value)
                         }
                     }
-                    // let value = self.compile_expr(&args[1], variables).unwrap();
-                    // let alloca = self.get_pointer_expr(&args[0], variables);
-                    // //let alloca = variables.get(var_name).expect("Undefined variable");
-                    // self.builder.build_store(alloca, value).unwrap();
-                    // Some(value)
                 }
 
                 "+" | "-" | "*" | "/" | "%" => {
@@ -1929,7 +1884,7 @@ impl<'ctx> Codegen<'ctx> {
             .unwrap()
             .into_pointer_value();
 
-        // ★ malloc の戻り値 (i8*) を必要な型 T* に変換する
+        //  malloc の戻り値 (i8*) を必要な型 T* に変換する
         let typed_ptr = self
             .builder
             .build_bit_cast(
@@ -1961,7 +1916,7 @@ impl<'ctx> Codegen<'ctx> {
             .unwrap()
             .into_pointer_value();
 
-        // ★ realloc の戻り値 (i8*) を必要な型 T* に変換する
+        //  realloc の戻り値 (i8*) を必要な型 T* に変換する
         let typed_ptr = self
             .builder
             .build_bit_cast(

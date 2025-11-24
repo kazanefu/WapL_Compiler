@@ -3,12 +3,12 @@ use std::fs;
 
 #[derive(Debug, Clone)]
 pub enum Expr {
-    IntNumber(i64),
-    FloatNumber(f64),
-    String(String),
-    Char(char),
-    Bool(bool),
-    ArrayLiteral(Vec<Expr>),
+    IntNumber(i64), //i64
+    FloatNumber(f64),//f64
+    String(String),//ptr:char=String
+    Char(char),//char
+    Bool(bool),//bool
+    ArrayLiteral(Vec<Expr>),//Array(e1,e2,e3,...)
     Ident(String),     //変数名,型名,ワープに使うラベル名前などStringではない文字列
     Return(Vec<Expr>), //関数の返り値
     Point(Vec<Expr>),  //ワープに使うラベル
@@ -16,7 +16,7 @@ pub enum Expr {
     Warp { name: String, args: Vec<Expr> }, //warpto,warptoif
     StructVal { _name: String, _args: Vec<Expr> }, //structの実体
     TypeApply { base: String, args: Vec<Expr> }, //ptr:typeとかのbase:type
-    Loopif{ name: String,cond:Vec<Expr>,body:Vec<Stmt>}
+    Loopif{ name: String,cond:Vec<Expr>,body:Vec<Stmt>} //loopif:name(cond){do}
 }
 #[derive(Debug, Clone)]
 pub struct Stmt {
@@ -43,7 +43,7 @@ pub struct Struct {
 
 #[derive(Debug, Clone)]
 pub struct Program {
-    pub functions: Vec<TopLevel>,
+    pub functions: Vec<TopLevel>,//functions & structs & toplevel call
 }
 
 pub struct Parser {
@@ -143,7 +143,7 @@ impl Parser {
                     self.no_return_next();
                 }
                 _ => {
-                    // トップレベルに式も許可する
+                    // toplevel eval
                     let expr = self.parse_expr();
                     funcs.push(TopLevel::Function(Function {
                         name: "toplevel_child".to_string(),
@@ -160,12 +160,12 @@ impl Parser {
 
     // -------------------------
     // Parse function
-    // fn name():i32 {; ... };
+    // fn name():i32 { ... }
     // -------------------------
     fn parse_function(&mut self) -> Function {
         self.expect(&Token::Fn);
 
-        // name
+        // function name
         let mut name = match self.next() {
             Some(Token::Ident(s)) => s.clone(),
             other => panic!("expected function name, got {:?}", other),
@@ -176,7 +176,7 @@ impl Parser {
             name
         };
 
-        // ()
+        // (type name,type name,...)
         self.expect(&Token::Lsep(LSeparator::LParen));
         let mut args = Vec::new();
         while let Some(token_arg_type) = self.peek() {
@@ -188,7 +188,6 @@ impl Parser {
                 Some(Token::Ident(s)) => self.parse_type_apply(s.clone()), //Expr::Ident(s.clone()),
                 other => panic!("expected arg type, got {:?}", other),
             };
-            println!("{:?}", arg_type);
             let arg_name = match self.next() {
                 Some(Token::Ident(s)) => Expr::Ident(s.clone()),
                 other => panic!("expected arg name, got {:?}", other),
@@ -206,7 +205,7 @@ impl Parser {
         }
         // { statements }
         self.expect(&Token::Lsep(LSeparator::LBrace));
-        self.consume_semicolon(); //self.expect(&Token::Semicolon);
+        self.consume_semicolon(); 
 
         let mut stmts = Vec::new();
 
@@ -229,7 +228,7 @@ impl Parser {
         }
 
         self.expect(&Token::Rsep(RSeparator::RBrace));
-        self.consume_semicolon(); //self.expect(&Token::Semicolon);
+        self.consume_semicolon();
 
         Function {
             name,
@@ -245,7 +244,7 @@ impl Parser {
     fn parse_struct(&mut self) -> Struct {
         self.expect(&Token::Struct);
 
-        // name
+        // struct name
         let (name, return_type) = match self.next() {
             Some(Token::Ident(s)) => (s.clone(), Expr::Ident(s.clone())),
             other => panic!("expected function name, got {:?}", other),
@@ -284,6 +283,7 @@ impl Parser {
     //   =(a, 1, i32)
     //   println(a)
     //   warpto(label)
+    //   loopif:name(cond){}
     // -------------------------
     fn parse_return_type(&mut self) -> Expr {
         self.no_return_next();
@@ -345,11 +345,7 @@ impl Parser {
     fn parse_type_apply(&mut self, name: String) -> Expr {
         match self.next() {
             Some(Token::Colon) => {}
-            _=> {self.no_return_back();return Expr::Ident(name.clone());}
-            // other => panic!(
-            //     "expected ':' after type name {:?}, got {:?}",
-            //     name, other
-            // ),
+            _=> {self.no_return_back();return Expr::Ident(name.clone());}//normal types
         }
         let mut args = Vec::new();
         match self.peek() {
@@ -426,16 +422,15 @@ impl Parser {
         Expr::Call { name, args }
     }
     fn parse_loopif(&mut self) -> Expr {
-        //self.expect(&Token::LoopIf);
         self.expect(&Token::Colon);
         
-        // name
+        // loopif name
         let name = match self.next() {
             Some(Token::Ident(s)) => s.clone(),
             _ => {self.no_return_back();"loop".to_string()},
         };
 
-        // ()
+        // (cond)
         match self.next() {
             Some(Token::Lsep(LSeparator::LParen)) => {}
             other => panic!(
@@ -462,7 +457,7 @@ impl Parser {
         
         // { statements }
         self.expect(&Token::Lsep(LSeparator::LBrace));
-        self.consume_semicolon(); //self.expect(&Token::Semicolon);
+        self.consume_semicolon();
 
         let mut stmts = Vec::new();
 
@@ -485,7 +480,7 @@ impl Parser {
         }
 
         self.expect(&Token::Rsep(RSeparator::RBrace));
-        self.consume_semicolon(); //self.expect(&Token::Semicolon);
+        self.consume_semicolon();
 
         Expr::Loopif { name, cond: args, body:stmts }
     }

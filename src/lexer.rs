@@ -74,7 +74,6 @@ impl Tokenizer {
                 self.pos += 1;
             } else {
                 self.skip_comment();
-                self.skip_whitespace();
                 break;
             }
         }
@@ -162,6 +161,7 @@ impl Tokenizer {
 
             return Token::StringLiteral(s);
         }
+        //----char-----
         if ch == '\'' {
             let mut s = String::new();
             while let Some(c) = self.next_char() {

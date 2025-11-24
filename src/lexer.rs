@@ -73,6 +73,8 @@ impl Tokenizer {
             if c.is_whitespace() {
                 self.pos += 1;
             } else {
+                self.skip_comment();
+                self.skip_whitespace();
                 break;
             }
         }

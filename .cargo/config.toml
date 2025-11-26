@@ -1,11 +1,1 @@
 
-
-
-
-[target.x86_64-pc-windows-gnu]
-linker = "/usr/bin/x86_64-w64-mingw32-gcc"
-
-[env]
-PKG_CONFIG_ALLOW_CROSS = "1"
-PKG_CONFIG_PATH = "/usr/x86_64-w64-mingw32/lib/pkgconfig"
-PATH = "/usr/x86_64-w64-mingw32/bin:${PATH}"

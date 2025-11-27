@@ -1106,7 +1106,7 @@ impl<'ctx> Codegen<'ctx> {
                             "getmembervalue",
                         )
                         .unwrap();
-                    Some((member_value.into(), membertype))
+                    Some((member_value.into(), expr_deref(&membertype)))
                 }
                 "->" => {
                     // let p = self.compile_expr(&args[0], variables).unwrap();
@@ -1483,7 +1483,7 @@ impl<'ctx> Codegen<'ctx> {
                 }
                 _ => panic!("Unknown type constructor: {}", base),
             },
-            _ => panic!("Expected identifier type"),
+            _ => panic!("Expected identifier type {:?}",expr),
         }
     }
     pub fn build_format_from_ptr(
@@ -2034,20 +2034,21 @@ impl<'ctx> Codegen<'ctx> {
         for (i, elem) in elems.iter().enumerate() {
             let index_val = self.context.i64_type().const_int(i as u64, false);
 
+
+
+            // 値生成
+            let val = self.compile_expr(elem, variables).unwrap();
             // 正しい GEP (i64* にオフセット)
             let gep = unsafe {
                 self.builder
                     .build_gep(
-                        self.llvm_type_from_expr(elem),
+                        self.llvm_type_from_expr(&val.1),
                         array_ptr,    // i64*
                         &[index_val], // index
                         "array_idx",
                     )
                     .unwrap()
             };
-
-            // 値生成
-            let val = self.compile_expr(elem, variables).unwrap();
 
             // store
             self.builder.build_store(gep, val.0).unwrap();

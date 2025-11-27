@@ -283,23 +283,31 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         expr: &Expr,
         variables: &mut HashMap<String, VariablesPointerAndTypes<'ctx>>,
-    ) -> Option<(BasicValueEnum<'ctx>, Expr)> {
+    ) -> Option<(
+        BasicValueEnum<'ctx>,
+        Expr,
+        Option<VariablesPointerAndTypes<'ctx>>,
+    )> {
         match expr {
             Expr::IntNumber(n) => Some((
                 self.context.i64_type().const_int(*n as u64, false).into(),
                 Expr::Ident("i64".to_string()),
+                None,
             )),
             Expr::FloatNumber(n) => Some((
                 self.context.f64_type().const_float(*n).into(),
                 Expr::Ident("f64".to_string()),
+                None,
             )),
             Expr::Bool(b) => Some((
                 self.context.bool_type().const_int(*b as u64, false).into(),
                 Expr::Ident("bool".to_string()),
+                None,
             )),
             Expr::Char(c) => Some((
                 self.context.i8_type().const_int(*c as u64, false).into(),
                 Expr::Ident("char".to_string()),
+                None,
             )),
             Expr::String(s) => {
                 let global_str = self
@@ -313,6 +321,7 @@ impl<'ctx> Codegen<'ctx> {
                         base: "ptr".to_string(),
                         args: vec![Expr::Ident("char".to_string())],
                     },
+                    None,
                 ))
             }
 
@@ -326,6 +335,7 @@ impl<'ctx> Codegen<'ctx> {
                         .unwrap()
                         .into(),
                     alloca.typeexpr.clone(),
+                    Some(alloca.clone()),
                 ))
             }
 
@@ -333,7 +343,11 @@ impl<'ctx> Codegen<'ctx> {
                 "ptr" | "&_" => {
                     let name = match &args[0] {
                         Expr::Ident(s) => s,
-                        _ => panic!("ptr expects identifier"),
+                        _ => {
+                            let (_exp,ty,p) = self.compile_expr(&args[0], variables).unwrap();
+                            let ptr = p.expect(&format!("")).ptr.as_basic_value_enum();
+                            return Some((ptr.clone(),Expr::TypeApply { base: "ptr".to_string(), args: vec![ty] },None))
+                        }
                     };
                     let alloca = get_var_alloca(variables, name);
                     Some((
@@ -348,17 +362,23 @@ impl<'ctx> Codegen<'ctx> {
                                     .clone(),
                             ],
                         },
+                        None,
                     ))
                 }
                 "val" | "*_" => {
                     let p = self.compile_expr(&args[0], variables).unwrap();
                     let ptr = p.0.into_pointer_value();
-                    let load_type = &expr_deref(&p.1);
+                    let mut load_type = &expr_deref(&p.1);
+                    let ty = args.get(1);
+                    load_type = match ty {
+                        Some(t) => t,
+                        None => load_type,
+                    };
                     let loaded = self
                         .builder
                         .build_load(self.llvm_type_from_expr(load_type), ptr, "deref")
                         .unwrap();
-                    Some((loaded.as_basic_value_enum(), load_type.clone()))
+                    Some((loaded.as_basic_value_enum(), load_type.clone(), None))
                 }
                 "let" | "#=" => {
                     // args: [var_name, initial_value, type_name]
@@ -384,7 +404,11 @@ impl<'ctx> Codegen<'ctx> {
                         self.compile_expr(&args[1], variables)
                     } else {
                         // struct の場合は zeroed で初期化
-                        Some((llvm_type.const_zero(), Expr::Ident("void".to_string())))
+                        Some((
+                            llvm_type.const_zero(),
+                            Expr::Ident("void".to_string()),
+                            None,
+                        ))
                     };
 
                     // alloca 作成
@@ -403,7 +427,7 @@ impl<'ctx> Codegen<'ctx> {
                         },
                     );
 
-                    Some((init_val.unwrap().0, Expr::Ident("void".to_string())))
+                    Some((init_val.unwrap().0, Expr::Ident("void".to_string()), None))
                 }
 
                 "=" => match &args[1] {
@@ -411,6 +435,7 @@ impl<'ctx> Codegen<'ctx> {
                         self.codegen_array_assign(&args[0], elems, variables)
                             .unwrap(),
                         Expr::Ident("void".to_string()),
+                        None,
                     )),
                     _ => {
                         let value = self.compile_expr(&args[1], variables).unwrap();
@@ -520,7 +545,7 @@ impl<'ctx> Codegen<'ctx> {
                         _ => unreachable!(),
                     };
 
-                    Some((result, lhs_val.1))
+                    Some((result, lhs_val.1, None))
                 }
                 "sqrt" | "cos" | "sin" | "pow" | "exp" | "log" => {
                     let compiled_args: Vec<BasicValueEnum> = args
@@ -546,26 +571,32 @@ impl<'ctx> Codegen<'ctx> {
                         "sqrt" => Some((
                             self.call_intrinsic("llvm.sqrt.f64", val_l, val_r),
                             Expr::Ident("f64".to_string()),
+                            None,
                         )),
                         "cos" => Some((
                             self.call_intrinsic("llvm.cos.f64", val_l, val_r),
                             Expr::Ident("f64".to_string()),
+                            None,
                         )),
                         "sin" => Some((
                             self.call_intrinsic("llvm.sin.f64", val_l, val_r),
                             Expr::Ident("f64".to_string()),
+                            None,
                         )),
                         "pow" => Some((
                             self.call_intrinsic("llvm.pow.f64", val_l, val_r),
                             Expr::Ident("f64".to_string()),
+                            None,
                         )),
                         "exp" => Some((
                             self.call_intrinsic("llvm.exp.f64", val_l, val_r),
                             Expr::Ident("f64".to_string()),
+                            None,
                         )),
                         "log" => Some((
                             self.call_intrinsic("llvm.log.f64", val_l, val_r),
                             Expr::Ident("f64".to_string()),
+                            None,
                         )),
                         _ => None,
                     }
@@ -605,10 +636,14 @@ impl<'ctx> Codegen<'ctx> {
                         ),
                         _ => None,
                     };
-                    Some((v.unwrap(), Expr::Ident("bool".to_string())))
+                    Some((v.unwrap(), Expr::Ident("bool".to_string()), None))
                 }
                 "&" | "|" | "^" | "<<" | ">>" | "l>>" => {
-                    let compiled_args: Vec<(BasicValueEnum, Expr)> = args
+                    let compiled_args: Vec<(
+                        BasicValueEnum,
+                        Expr,
+                        Option<VariablesPointerAndTypes>,
+                    )> = args
                         .into_iter()
                         .map(|arg| {
                             let val = self.compile_expr(arg, variables).unwrap();
@@ -630,6 +665,7 @@ impl<'ctx> Codegen<'ctx> {
                                 .unwrap()
                                 .as_basic_value_enum(),
                             compiled_args[0].clone().1,
+                            None,
                         )),
                         "|" => Some((
                             self.builder
@@ -637,6 +673,7 @@ impl<'ctx> Codegen<'ctx> {
                                 .unwrap()
                                 .as_basic_value_enum(),
                             compiled_args[0].clone().1,
+                            None,
                         )),
                         "^" => Some((
                             self.builder
@@ -644,6 +681,7 @@ impl<'ctx> Codegen<'ctx> {
                                 .unwrap()
                                 .as_basic_value_enum(),
                             compiled_args[0].clone().1,
+                            None,
                         )),
                         "<<" => Some((
                             self.builder
@@ -651,6 +689,7 @@ impl<'ctx> Codegen<'ctx> {
                                 .unwrap()
                                 .as_basic_value_enum(),
                             compiled_args[0].clone().1,
+                            None,
                         )),
                         ">>" => Some((
                             self.builder
@@ -658,6 +697,7 @@ impl<'ctx> Codegen<'ctx> {
                                 .unwrap()
                                 .as_basic_value_enum(),
                             compiled_args[0].clone().1,
+                            None,
                         )),
                         "l>>" => Some((
                             self.builder
@@ -665,12 +705,17 @@ impl<'ctx> Codegen<'ctx> {
                                 .unwrap()
                                 .as_basic_value_enum(),
                             compiled_args[0].clone().1,
+                            None,
                         )),
                         _ => None,
                     }
                 }
                 "&&" | "||" | "and" | "or" => {
-                    let compiled_args: Vec<(BasicValueEnum, Expr)> = args
+                    let compiled_args: Vec<(
+                        BasicValueEnum,
+                        Expr,
+                        Option<VariablesPointerAndTypes>,
+                    )> = args
                         .into_iter()
                         .map(|arg| {
                             let val = self.compile_expr(arg, variables).unwrap();
@@ -700,10 +745,10 @@ impl<'ctx> Codegen<'ctx> {
                         ),
                         _ => None,
                     };
-                    Some((v.unwrap(), Expr::Ident("bool".to_string())))
+                    Some((v.unwrap(), Expr::Ident("bool".to_string()), None))
                 }
                 "!" | "not" => {
-                    let compiled_args: Vec<(BasicValueEnum, Expr)> = args
+                    let compiled_args: Vec<(BasicValueEnum, Expr, Option<_>)> = args
                         .into_iter()
                         .map(|arg| {
                             let val = self.compile_expr(arg, variables).unwrap();
@@ -720,10 +765,11 @@ impl<'ctx> Codegen<'ctx> {
                             .unwrap()
                             .as_basic_value_enum(),
                         compiled_args[0].clone().1,
+                        None,
                     ))
                 }
                 "as_i64" | "as_f64" => {
-                    let compiled_args: Vec<(BasicValueEnum, Expr)> = args
+                    let compiled_args: Vec<(BasicValueEnum, Expr, Option<_>)> = args
                         .into_iter()
                         .map(|arg| {
                             let val = self.compile_expr(arg, variables).unwrap();
@@ -736,17 +782,19 @@ impl<'ctx> Codegen<'ctx> {
                             self.build_cast_to_i64(compiled_args[0].0)
                                 .as_basic_value_enum(),
                             Expr::Ident("i64".to_string()),
+                            None,
                         )),
                         "as_f64" => Some((
                             self.build_cast_to_f64(compiled_args[0].0)
                                 .as_basic_value_enum(),
                             Expr::Ident("f64".to_string()),
+                            None,
                         )),
                         _ => None,
                     }
                 }
                 "parse_i64" | "parse_f64" => {
-                    let compiled_args: Vec<(BasicValueEnum, Expr)> = args
+                    let compiled_args: Vec<(BasicValueEnum, Expr, Option<_>)> = args
                         .into_iter()
                         .map(|arg| {
                             let val = self.compile_expr(arg, variables).unwrap();
@@ -758,17 +806,19 @@ impl<'ctx> Codegen<'ctx> {
                             self.build_cast_to_i64(compiled_args[0].0)
                                 .as_basic_value_enum(),
                             Expr::Ident("i64".to_string()),
+                            None,
                         )),
                         "parse_f64" => Some((
                             self.build_cast_to_f64(compiled_args[0].0)
                                 .as_basic_value_enum(),
                             Expr::Ident("f64".to_string()),
+                            None,
                         )),
                         _ => None,
                     }
                 }
                 "if" => {
-                    let compiled_args: Vec<(BasicValueEnum, Expr)> = args
+                    let compiled_args: Vec<(BasicValueEnum, Expr, Option<_>)> = args
                         .into_iter()
                         .map(|arg| {
                             let val = self.compile_expr(arg, variables).unwrap();
@@ -783,6 +833,7 @@ impl<'ctx> Codegen<'ctx> {
                             "if",
                         ),
                         compiled_args[1].clone().1,
+                        None,
                     ))
                 }
                 "println" => {
@@ -821,6 +872,7 @@ impl<'ctx> Codegen<'ctx> {
                             base: "ptr".to_string(),
                             args: vec![Expr::Ident("char".to_string())],
                         },
+                        None,
                     ))
                 }
                 "ptr_add_byte" => {
@@ -852,6 +904,7 @@ impl<'ctx> Codegen<'ctx> {
                             base: "ptr".to_string(),
                             args: vec![Expr::Ident("T".to_string())],
                         },
+                        None,
                     ))
                 }
                 "ptr_add" => {
@@ -879,13 +932,12 @@ impl<'ctx> Codegen<'ctx> {
                             )
                             .unwrap()
                     };
-                    Some((gep.as_basic_value_enum(), a.1))
+                    Some((gep.as_basic_value_enum(), a.1, None))
                 }
                 "index" => {
                     // args: [ptr, idx] or [idx, ptr] -> load *(ptr + idx)
                     let a = self.compile_expr(&args[0], variables).unwrap();
                     let b = self.compile_expr(&args[1], variables).unwrap();
-
                     let (ptr_val, idx_int) = match (a.0, b.0) {
                         (BasicValueEnum::PointerValue(p), BasicValueEnum::IntValue(i)) => {
                             (p, self.int_to_i64(i))
@@ -910,7 +962,14 @@ impl<'ctx> Codegen<'ctx> {
                         .builder
                         .build_load(self.llvm_type_from_expr(&expr_deref(&a.1)), gep, "idx_load")
                         .unwrap();
-                    Some((loaded.as_basic_value_enum(), expr_deref(&a.1)))
+                    Some((
+                        loaded.as_basic_value_enum(),
+                        expr_deref(&a.1),
+                        Some(VariablesPointerAndTypes {
+                            ptr: gep,
+                            typeexpr: expr_deref(&a.1),
+                        }),
+                    ))
                 }
                 "alloc_array" => {
                     // args: [type_name, length_expr]
@@ -948,6 +1007,7 @@ impl<'ctx> Codegen<'ctx> {
                             base: "ptr".to_string(),
                             args: vec![args[0].clone()],
                         },
+                        None,
                     ))
                 }
                 "free" => {
@@ -968,6 +1028,7 @@ impl<'ctx> Codegen<'ctx> {
                             base: "ptr".to_string(),
                             args: vec![args[1].clone()],
                         },
+                        None,
                     ))
                 }
                 "realloc" => {
@@ -988,6 +1049,7 @@ impl<'ctx> Codegen<'ctx> {
                             base: "ptr".to_string(),
                             args: vec![args[2].clone()],
                         },
+                        None,
                     ))
                 }
                 "memcpy" => {
@@ -1016,7 +1078,10 @@ impl<'ctx> Codegen<'ctx> {
                                 .unwrap(),
                             i,
                         ),
-                        _ => panic!("memcopy expects (ptr,ptr,int) found {:?},{:?},{:?}",dest_ptr.1, src_ptr.1, size.1),
+                        _ => panic!(
+                            "memcopy expects (ptr,ptr,int) found {:?},{:?},{:?}",
+                            dest_ptr.1, src_ptr.1, size.1
+                        ),
                     };
                     self.builder
                         .build_memcpy(dest_i8, 1, src_i8, 1, size_int)
@@ -1050,7 +1115,10 @@ impl<'ctx> Codegen<'ctx> {
                                 .unwrap(),
                             i,
                         ),
-                        _ => panic!("memmove expects (ptr,ptr,int)"),
+                        _ => panic!(
+                            "memmove expects (ptr,ptr,int)found {:?},{:?},{:?}",
+                            dest_ptr.1, src_ptr.1, size.1
+                        ),
                     };
                     self.builder
                         .build_memmove(dest_i8, 1, src_i8, 1, size_int)
@@ -1078,7 +1146,7 @@ impl<'ctx> Codegen<'ctx> {
                             v,
                             s,
                         ),
-                        _ => panic!("memmove expects (ptr,ptr,int)"),
+                        _ => panic!("memset expects (ptr,val,int)"),
                     };
                     let value_i8 = self
                         .builder
@@ -1093,11 +1161,12 @@ impl<'ctx> Codegen<'ctx> {
                 "sizeof" => Some((
                     self.compile_sizeof(&args[0]),
                     Expr::Ident("i64".to_string()),
+                    None,
                 )),
                 "_>" => {
                     let value_struct = self.compile_expr(&args[0], variables).unwrap();
                     let (memberptr, membertype) =
-                        self.compile_member_access(value_struct.0, &args[1],&value_struct.1);
+                        self.compile_member_access(value_struct.0, &args[1], &value_struct.1);
                     let member_value = self
                         .builder
                         .build_load(
@@ -1106,7 +1175,42 @@ impl<'ctx> Codegen<'ctx> {
                             "getmembervalue",
                         )
                         .unwrap();
-                    Some((member_value.into(), expr_deref(&membertype)))
+                    Some((
+                        member_value.into(),
+                        expr_deref(&membertype),
+                        Some(VariablesPointerAndTypes {
+                            ptr: memberptr,
+                            typeexpr: expr_deref(&membertype),
+                        }),
+                    ))
+                }
+                "." => {
+                    let value_struct = self.compile_expr(&args[0], variables).unwrap();
+                    let alloca = value_struct.2.unwrap().ptr;
+                    let (memberptr, membertype) = self.compile_member_access(
+                        alloca.as_basic_value_enum(),
+                        &args[1],
+                        &Expr::TypeApply {
+                            base: "ptr".to_string(),
+                            args: vec![value_struct.1],
+                        },
+                    );
+                    let member_value = self
+                        .builder
+                        .build_load(
+                            self.llvm_type_from_expr(&expr_deref(&membertype)),
+                            memberptr,
+                            "getmembervalue",
+                        )
+                        .unwrap();
+                    Some((
+                        member_value.into(),
+                        expr_deref(&membertype),
+                        Some(VariablesPointerAndTypes {
+                            ptr: memberptr,
+                            typeexpr: expr_deref(&membertype),
+                        }),
+                    ))
                 }
                 "->" => {
                     // let p = self.compile_expr(&args[0], variables).unwrap();
@@ -1114,8 +1218,8 @@ impl<'ctx> Codegen<'ctx> {
                     // let loaded = self.builder.build_load(p, "->deref").unwrap();
                     let value_struct = self.compile_expr(&args[0], variables).unwrap();
                     let (memberptr, membertype) =
-                        self.compile_member_access(value_struct.0, &args[1],&value_struct.1);
-                    Some((memberptr.as_basic_value_enum().into(), membertype))
+                        self.compile_member_access(value_struct.0, &args[1], &value_struct.1);
+                    Some((memberptr.as_basic_value_enum().into(), membertype, None))
                 }
                 "scanf" => {
                     let fmt_val = self.compile_expr(&args[0], variables).unwrap();
@@ -1140,6 +1244,7 @@ impl<'ctx> Codegen<'ctx> {
                                 base: "ptr".to_string(),
                                 args: vec![Expr::Ident("T".to_string())],
                             },
+                            None,
                         )),
                         _ => None,
                     }
@@ -1155,6 +1260,7 @@ impl<'ctx> Codegen<'ctx> {
                                     base: "ptr".to_string(),
                                     args: vec![args[1].clone()],
                                 },
+                                None,
                             ))
                         }
                         _ => None,
@@ -1183,6 +1289,7 @@ impl<'ctx> Codegen<'ctx> {
                                 .get(name)
                                 .expect(&format!("not defined function {}", name))
                                 .clone(),
+                            None,
                         ))
                     } else {
                         None
@@ -1483,7 +1590,7 @@ impl<'ctx> Codegen<'ctx> {
                 }
                 _ => panic!("Unknown type constructor: {}", base),
             },
-            _ => panic!("Expected identifier type {:?}",expr),
+            _ => panic!("Expected identifier type {:?}", expr),
         }
     }
     pub fn build_format_from_ptr(
@@ -1771,21 +1878,12 @@ impl<'ctx> Codegen<'ctx> {
                     .get_function("strtol")
                     .expect("strtol not defined");
 
-                let null_endptr = self
-                    .context
-                    .ptr_type(Default::default())
-                    .const_zero();
-                let _null_endptr_ptr = self
-                    .context
-                    .ptr_type(Default::default())
-                    .const_zero();
+                let null_endptr = self.context.ptr_type(Default::default()).const_zero();
+                let _null_endptr_ptr = self.context.ptr_type(Default::default()).const_zero();
 
                 let endptr = self
                     .builder
-                    .build_alloca(
-                        self.context.ptr_type(Default::default()),
-                        "endptr",
-                    )
+                    .build_alloca(self.context.ptr_type(Default::default()), "endptr")
                     .unwrap();
                 self.builder.build_store(endptr, null_endptr).unwrap();
 
@@ -2007,8 +2105,12 @@ impl<'ctx> Codegen<'ctx> {
                 }
             }
             Expr::Call { name: _, args: _ } => {
-                let p_val = self.compile_expr(expr, variables).unwrap().0;
-                p_val.into_pointer_value()
+                let (p_val,_ty,ispointer) = self.compile_expr(expr, variables).unwrap();
+                match ispointer{
+                    Some(p)=>p.ptr,
+                    None => p_val.into_pointer_value()
+                }
+                
             }
             _ => panic!("Left-hand side must be a pointer or val(ptr)"),
         }
@@ -2033,8 +2135,6 @@ impl<'ctx> Codegen<'ctx> {
 
         for (i, elem) in elems.iter().enumerate() {
             let index_val = self.context.i64_type().const_int(i as u64, false);
-
-
 
             // 値生成
             let val = self.compile_expr(elem, variables).unwrap();
@@ -2125,7 +2225,7 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         struct_value_enum: BasicValueEnum<'ctx>,
         field_name_expr: &Expr,
-        struct_type:&Expr,
+        struct_type: &Expr,
     ) -> (PointerValue<'ctx>, Expr) {
         let field_name = match field_name_expr {
             Expr::Ident(s) => s.clone(),
@@ -2139,14 +2239,16 @@ impl<'ctx> Codegen<'ctx> {
             }
         };
         //let struct_anytype = struct_value.get_type().as_any_type_enum();
-        let struct_type: StructType<'ctx> = self.llvm_type_from_expr(&expr_deref(&struct_type)).into_struct_type();//match struct_anytype {
+        let struct_type: StructType<'ctx> = self
+            .llvm_type_from_expr(&expr_deref(&struct_type))
+            .into_struct_type(); //match struct_anytype {
         //     AnyTypeEnum::StructType(struct_t) => struct_t,
         //     _ => {
         //         // エラー処理: ポインタが構造体型を指していない
         //         panic!("ポインタが構造体型を指していません。");
         //     }
         // };
-        
+
         let key = self
             .struct_types
             .iter()
@@ -2162,7 +2264,13 @@ impl<'ctx> Codegen<'ctx> {
             .builder
             .build_struct_gep(struct_type, struct_value, indx, "access")
             .unwrap();
-        (return_ptr, Expr::TypeApply { base: "ptr".to_string(), args: vec![typeexpr] })
+        (
+            return_ptr,
+            Expr::TypeApply {
+                base: "ptr".to_string(),
+                args: vec![typeexpr],
+            },
+        )
     }
 
     fn compile_sizeof(&self, ty_expr: &Expr) -> BasicValueEnum<'ctx> {
@@ -2233,7 +2341,7 @@ impl<'ctx> Codegen<'ctx> {
         let ptr_val = match ptr_expr {
             Expr::Ident(_) => self
                 .builder
-                .build_load(self.context.ptr_type(Default::default()),ptr, "get_ptr")
+                .build_load(self.context.ptr_type(Default::default()), ptr, "get_ptr")
                 .unwrap()
                 .into_pointer_value(),
             _ => ptr,
@@ -2249,9 +2357,7 @@ impl<'ctx> Codegen<'ctx> {
             context.i64_type().fn_type(
                 &[
                     context.ptr_type(Default::default()).into(),
-                    context
-                        .ptr_type(Default::default())
-                        .into(),
+                    context.ptr_type(Default::default()).into(),
                     context.i32_type().into(),
                 ],
                 false,
@@ -2262,20 +2368,18 @@ impl<'ctx> Codegen<'ctx> {
         // atof(i8*)
         self.module.add_function(
             "atof",
-            context.f64_type().fn_type(
-                &[context.ptr_type(Default::default()).into()],
-                false,
-            ),
+            context
+                .f64_type()
+                .fn_type(&[context.ptr_type(Default::default()).into()], false),
             None,
         );
 
         // printf(i8*, ...)
         self.module.add_function(
             "printf",
-            context.i32_type().fn_type(
-                &[context.ptr_type(Default::default()).into()],
-                true,
-            ),
+            context
+                .i32_type()
+                .fn_type(&[context.ptr_type(Default::default()).into()], true),
             None,
         );
 
@@ -2428,9 +2532,7 @@ fn combine_toplevel<'ctx>(module: &Module<'ctx>, builder: &Builder<'ctx>) {
     }
     // 2. main の関数型を作る: i32 main(i32, i8**)
     let i32_type = module.get_context().i32_type();
-    let _i8_ptr_type = module
-        .get_context()
-        .ptr_type(AddressSpace::from(0));
+    let _i8_ptr_type = module.get_context().ptr_type(AddressSpace::from(0));
     let main_fn_type = i32_type.fn_type(
         &[
             i32_type.into(),

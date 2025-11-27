@@ -67,6 +67,9 @@ impl<'ctx> Codegen<'ctx> {
                 TopLevel::Struct(s) => {
                     self.compile_struct(s);
                 }
+                TopLevel::Declare(d)=>{
+                    self.compile_declare(d);
+                }
             }
         }
         combine_toplevel(&self.module, &self.builder);
@@ -2418,6 +2421,42 @@ impl<'ctx> Codegen<'ctx> {
         let i8ptr_type = context.ptr_type(AddressSpace::default());
         let scanf_type = context.i32_type().fn_type(&[i8ptr_type.into()], true);
         self.module.add_function("scanf", scanf_type, None);
+    }
+    fn compile_declare(&mut self, func: Declare){
+        if self.function_types.contains_key(&func.name) {
+            panic!("function '{}' already defined", func.name);
+        }
+        // --- type of return value ---
+        let return_type_is_void = matches!(func.return_type, Expr::Ident(ref s) if s == "void");
+
+        let return_type_enum = if return_type_is_void {
+            None
+        } else {
+            Some(self.llvm_type_from_expr(&func.return_type))
+        };
+
+        // --- type of arguments ---
+        let arg_types: Vec<BasicTypeEnum> = func
+            .args
+            .iter()
+            .map(|ty| self.llvm_type_from_expr(ty))
+            .collect();
+
+        // ---convert to Metadata type ---
+        let arg_types_meta: Vec<BasicMetadataTypeEnum> =
+            arg_types.iter().map(|t| (*t).into()).collect();
+
+        // --- LLVM gen function ---
+        let fn_type = if return_type_is_void {
+            self.context.void_type().fn_type(&arg_types_meta, func.is_vararg)
+        } else {
+            return_type_enum.unwrap().fn_type(&arg_types_meta, func.is_vararg)
+        };
+
+        // --- add function ---
+        let _llvm_func = self.module.add_function(&func.name, fn_type, None);
+        self.function_types
+            .insert(func.name.clone(), func.return_type);
     }
 
     fn compile_loopif(

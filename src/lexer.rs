@@ -16,6 +16,7 @@ pub enum Token {
     Return,
     Import,
     LoopIf,
+    Declare,
 
     // signs & operators
     Comma,
@@ -279,6 +280,7 @@ impl Tokenizer {
                 "Array" => Token::ArrayCall,
                 "import"|"use" => Token::Import,
                 "loopif" => Token::LoopIf,
+                "declare" => Token::Declare,
                 _ => Token::Ident(s),
             };
         }

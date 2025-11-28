@@ -1,3 +1,4 @@
+use colored::*;
 use inkwell::AddressSpace;
 use inkwell::FloatPredicate;
 use inkwell::IntPredicate;
@@ -26,6 +27,45 @@ struct FunctionContext<'ctx> {
     labels: HashMap<String, BasicBlock<'ctx>>, //labels(already exist)
     unresolved: HashMap<String, Vec<PendingJump<'ctx>>>, //labels(unresolved)
 }
+#[derive(Clone)]
+pub struct ScopeOwner {
+    pos: usize,
+    owners: Vec<HashMap<String, bool>>,
+}
+impl ScopeOwner {
+    fn new() -> Self {
+        Self {
+            pos: 0,
+            owners: vec![HashMap::new()],
+        }
+    }
+    fn back(&mut self) {
+        self.pos -= if self.pos != 0 { 1 } else { 0 };
+    }
+    fn next(&mut self) {
+        self.pos += 1;
+        if self.owners.len() <= self.pos {
+            self.owners.push(HashMap::new());
+            if self.owners.len() <= self.pos {
+                panic!("ScopeOwner fail next");
+            }
+        } else {
+            self.owners[self.pos] = HashMap::new();
+        }
+    }
+    fn reset_current(&mut self) {
+        self.owners[self.pos] = HashMap::new();
+    }
+    fn set_true(&mut self, name: String) {
+        self.owners[self.pos].insert(name, true);
+    }
+    fn _set_false(&mut self, name: String) {
+        self.owners[self.pos].insert(name, false);
+    }
+    fn show_current(&mut self) -> HashMap<String, bool> {
+        self.owners[self.pos].clone()
+    }
+}
 
 pub struct Codegen<'ctx> {
     pub context: &'ctx Context,
@@ -36,6 +76,8 @@ pub struct Codegen<'ctx> {
     str_counter: usize, //global str counter
     current_fn: Option<FunctionContext<'ctx>>,
     pub function_types: HashMap<String, Expr>,
+    pub current_owners: HashMap<String, bool>,
+    pub scope_owners: ScopeOwner,
 }
 
 impl<'ctx> Codegen<'ctx> {
@@ -52,6 +94,8 @@ impl<'ctx> Codegen<'ctx> {
             str_counter: 0,
             current_fn: None,
             function_types: HashMap::new(),
+            current_owners: HashMap::new(),
+            scope_owners: ScopeOwner::new(),
         };
         this.init_external_functions(); // declare C functions  
         this
@@ -67,7 +111,7 @@ impl<'ctx> Codegen<'ctx> {
                 TopLevel::Struct(s) => {
                     self.compile_struct(s);
                 }
-                TopLevel::Declare(d)=>{
+                TopLevel::Declare(d) => {
                     self.compile_declare(d);
                 }
             }
@@ -114,6 +158,8 @@ impl<'ctx> Codegen<'ctx> {
         self.builder.position_at_end(entry);
 
         // --- alloca & initialize args ---
+        self.current_owners = HashMap::new();
+        self.scope_owners = ScopeOwner::new();
         let mut variables: HashMap<String, VariablesPointerAndTypes<'ctx>> = HashMap::new();
         for (i, (ty, arg_expr)) in func.args.iter().enumerate() {
             let param = llvm_func.get_nth_param(i as u32).unwrap();
@@ -138,6 +184,13 @@ impl<'ctx> Codegen<'ctx> {
                     typeexpr: ty.clone(),
                 },
             );
+            match ty {
+                Expr::TypeApply { base, args: _args } if base == "*" => {
+                    self.current_owners.insert(arg_name.to_string(), true);
+                    self.scope_owners.set_true(arg_name.to_string());
+                }
+                _ => {}
+            }
         }
         //alloca return value
         let _ret_alloca = if !return_type_is_void {
@@ -269,6 +322,16 @@ impl<'ctx> Codegen<'ctx> {
                     .unwrap()
                     .0;
                 self.builder.build_return(Some(&ret_val)).unwrap();
+                for i in self.scope_owners.show_current() {
+                    if let Some(b) = self.current_owners.get(&i.0) && *b {
+                        println!(
+                            "{}:you need to free or drop pointer {}!",
+                            "Error".red().bold(),
+                            i.0
+                        );
+                    }
+                }
+                self.scope_owners.reset_current();
                 //None // 既に return しているので上位に値を返す必要なし
             }
             Expr::Loopif { name, cond, body } => {
@@ -332,6 +395,17 @@ impl<'ctx> Codegen<'ctx> {
                 let alloca = variables
                     .get(name)
                     .expect(&format!("Undefined variable {}", name));
+                match &alloca.typeexpr {
+                    Expr::TypeApply { base, args } if base == "*" => {
+                        if !self.current_owners.get(name).expect(&format!(
+                            "{} type is *:{:?} but failed to find in ownership ",
+                            name, args[0]
+                        )) {
+                            println!("{}:\"{}\" already moved", "Error".red().bold(), name)
+                        }
+                    }
+                    _ => {}
+                }
                 Some((
                     self.builder
                         .build_load(self.llvm_type_from_expr(&alloca.typeexpr), alloca.ptr, name)
@@ -347,9 +421,16 @@ impl<'ctx> Codegen<'ctx> {
                     let name = match &args[0] {
                         Expr::Ident(s) => s,
                         _ => {
-                            let (_exp,ty,p) = self.compile_expr(&args[0], variables).unwrap();
+                            let (_exp, ty, p) = self.compile_expr(&args[0], variables).unwrap();
                             let ptr = p.expect(&format!("")).ptr.as_basic_value_enum();
-                            return Some((ptr.clone(),Expr::TypeApply { base: "ptr".to_string(), args: vec![ty] },None))
+                            return Some((
+                                ptr.clone(),
+                                Expr::TypeApply {
+                                    base: "ptr".to_string(),
+                                    args: vec![ty],
+                                },
+                                None,
+                            ));
                         }
                     };
                     let alloca = get_var_alloca(variables, name);
@@ -429,6 +510,13 @@ impl<'ctx> Codegen<'ctx> {
                             typeexpr: args[2].clone(),
                         },
                     );
+                    match &args[2] {
+                        Expr::TypeApply { base, args: _args } if base == "*" => {
+                            self.current_owners.insert(var_name.clone(), true);
+                            self.scope_owners.set_true(var_name.clone());
+                        }
+                        _ => {}
+                    }
 
                     Some((init_val.unwrap().0, Expr::Ident("void".to_string()), None))
                 }
@@ -443,6 +531,14 @@ impl<'ctx> Codegen<'ctx> {
                     _ => {
                         let value = self.compile_expr(&args[1], variables).unwrap();
                         let alloca = self.get_pointer_expr(&args[0], variables);
+                        if let Expr::Call { name:_name, args } = &args[0]
+                            && let Some(Expr::Ident(s)) = args.get(0)
+                            && let Some(val) = variables.get(s)
+                            && let Expr::TypeApply{base,args:_args} = &val.typeexpr
+                            && base == "&"
+                        {
+                            println!("{} :{} :{:?} is immutable borrow! if you want to reassign, use &mut:T","Error".red().bold(),s, &val.typeexpr);
+                        }
                         self.builder.build_store(alloca, value.0).unwrap();
                         Some(value)
                     }
@@ -1017,6 +1113,82 @@ impl<'ctx> Codegen<'ctx> {
                     self.compile_free(&args[0], variables);
                     None
                 }
+                "pmove" => {
+                    let (val, ty, ptr) = self.compile_expr(&args[0], variables).unwrap();
+                    match &ty {
+                        Expr::TypeApply { base, args: _args } if base == "*" => match &args[0] {
+                            Expr::Ident(s) => {
+                                if let Some(v) = self.current_owners.get_mut(s) {
+                                    if !*v {
+                                        println!(
+                                            "{} : at pmove \"{}\" already moved",
+                                            "Error".red().bold(),
+                                            s
+                                        );
+                                    }
+                                    *v = false;
+                                }
+                                if let Some(v) =
+                                    self.scope_owners.owners[self.scope_owners.pos].get_mut(s)
+                                {
+                                    if !*v {
+                                        //println!("{} : at pmove \"{}\" already moved","Warning".yellow().bold(),s);
+                                    }
+                                    *v = false;
+                                }
+                            }
+                            _ => {
+                                println!(
+                                    "{} pmove expect *:T variables found {:?}",
+                                    "Error".red().bold(),
+                                    &args[0]
+                                );
+                            }
+                        },
+                        Expr::TypeApply { base, args: _args } if base == "&" || base == "&mut" => {
+                            println!(
+                                "{} pmove expect *:T variables found {:?}",
+                                "Error".red().bold(),
+                                &ty
+                            );
+                        }
+                        _ => {}
+                    }
+                    Some((val, ty, ptr))
+                }
+                "p&" => {
+                    let (val, ty, ptr) = self.compile_expr(&args[0], variables).unwrap();
+                    Some((
+                        val,
+                        Expr::TypeApply {
+                            base: "&".to_string(),
+                            args: vec![expr_deref(&ty)],
+                        },
+                        ptr,
+                    ))
+                }
+                "p&mut" => {
+                    let (val, ty, ptr) = self.compile_expr(&args[0], variables).unwrap();
+                    match &ty {
+                        Expr::TypeApply { base, args: _args } if base == "&" => {
+                            println!(
+                                "{}: p&mut expect &mut:T or *:T found {:?} {:?}",
+                                "Error".red().bold(),
+                                ty,
+                                &args[0]
+                            )
+                        }
+                        _ => {}
+                    }
+                    Some((
+                        val,
+                        Expr::TypeApply {
+                            base: "&mut".to_string(),
+                            args: vec![expr_deref(&ty)],
+                        },
+                        ptr,
+                    ))
+                }
                 "malloc" => {
                     let size_enum = self.compile_expr(&args[0], variables).unwrap();
                     let size = match size_enum.0 {
@@ -1579,12 +1751,16 @@ impl<'ctx> Codegen<'ctx> {
                         "char" => self.context.i8_type().into(),
                         "T" => self.context.i8_type().into(),
                         "ptr" => self.context.ptr_type(Default::default()).into(),
+                        "*" => self.context.ptr_type(Default::default()).into(),
+                        "&" => self.context.ptr_type(Default::default()).into(),
+                        "&mut" => self.context.ptr_type(Default::default()).into(),
+                        "&n" => self.context.ptr_type(Default::default()).into(),
                         _ => panic!("Unknown type: {}", name),
                     }
                 }
             }
             Expr::TypeApply { base, args } => match base.as_str() {
-                "ptr" => {
+                "ptr" | "*" | "&" | "&mut" | "&n" => {
                     if args.len() != 1 {
                         panic!("ptr<T> requires exactly one type argument");
                     }
@@ -2108,12 +2284,11 @@ impl<'ctx> Codegen<'ctx> {
                 }
             }
             Expr::Call { name: _, args: _ } => {
-                let (p_val,_ty,ispointer) = self.compile_expr(expr, variables).unwrap();
-                match ispointer{
-                    Some(p)=>p.ptr,
-                    None => p_val.into_pointer_value()
+                let (p_val, _ty, ispointer) = self.compile_expr(expr, variables).unwrap();
+                match ispointer {
+                    Some(p) => p.ptr,
+                    None => p_val.into_pointer_value(),
                 }
-                
             }
             _ => panic!("Left-hand side must be a pointer or val(ptr)"),
         }
@@ -2320,7 +2495,11 @@ impl<'ctx> Codegen<'ctx> {
         //     .into_pointer_value(),
         //     _ => ptr,
         // };
-        let free_ptr = self.get_pointer_expr_only_val(ptr_expr, variables);
+        let free_ptr: PointerValue<'_> = self
+            .compile_expr(ptr_expr, variables)
+            .unwrap()
+            .0
+            .into_pointer_value();
         // i8* へ bitcast
         let i8_ptr_type = self.context.ptr_type(AddressSpace::default());
         let casted = self
@@ -2422,7 +2601,7 @@ impl<'ctx> Codegen<'ctx> {
         let scanf_type = context.i32_type().fn_type(&[i8ptr_type.into()], true);
         self.module.add_function("scanf", scanf_type, None);
     }
-    fn compile_declare(&mut self, func: Declare){
+    fn compile_declare(&mut self, func: Declare) {
         if self.function_types.contains_key(&func.name) {
             panic!("function '{}' already defined", func.name);
         }
@@ -2448,9 +2627,13 @@ impl<'ctx> Codegen<'ctx> {
 
         // --- LLVM gen function ---
         let fn_type = if return_type_is_void {
-            self.context.void_type().fn_type(&arg_types_meta, func.is_vararg)
+            self.context
+                .void_type()
+                .fn_type(&arg_types_meta, func.is_vararg)
         } else {
-            return_type_enum.unwrap().fn_type(&arg_types_meta, func.is_vararg)
+            return_type_enum
+                .unwrap()
+                .fn_type(&arg_types_meta, func.is_vararg)
         };
 
         // --- add function ---
@@ -2467,6 +2650,7 @@ impl<'ctx> Codegen<'ctx> {
         variables: &mut HashMap<String, VariablesPointerAndTypes<'ctx>>,
     ) {
         let mut inloop_variables = variables.clone();
+        self.scope_owners.next();
         let current_fn = self.current_fn.as_mut().expect("Not in a function");
         let loop_start = self
             .context
@@ -2536,6 +2720,17 @@ impl<'ctx> Codegen<'ctx> {
 
         // 終了ブロック
         self.builder.position_at_end(end_block);
+        for i in self.scope_owners.show_current() {
+            if let Some(b) = self.current_owners.get(&i.0) && *b {
+                println!(
+                    "{}:you need to free or drop pointer {}!",
+                    "Error".red().bold(),
+                    i.0
+                );
+            }
+        }
+        self.scope_owners.reset_current();
+        self.scope_owners.back();
     }
 }
 fn float_bit_width(ft: FloatType) -> u32 {

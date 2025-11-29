@@ -323,7 +323,9 @@ impl<'ctx> Codegen<'ctx> {
                     .0;
                 self.builder.build_return(Some(&ret_val)).unwrap();
                 for i in self.scope_owners.show_current() {
-                    if let Some(b) = self.current_owners.get(&i.0) && *b {
+                    if let Some(b) = self.current_owners.get(&i.0)
+                        && *b
+                    {
                         println!(
                             "{}:you need to free or drop pointer {}!",
                             "Error".red().bold(),
@@ -531,13 +533,18 @@ impl<'ctx> Codegen<'ctx> {
                     _ => {
                         let value = self.compile_expr(&args[1], variables).unwrap();
                         let alloca = self.get_pointer_expr(&args[0], variables);
-                        if let Expr::Call { name:_name, args } = &args[0]
+                        if let Expr::Call { name: _name, args } = &args[0]
                             && let Some(Expr::Ident(s)) = args.get(0)
                             && let Some(val) = variables.get(s)
-                            && let Expr::TypeApply{base,args:_args} = &val.typeexpr
+                            && let Expr::TypeApply { base, args: _args } = &val.typeexpr
                             && base == "&"
                         {
-                            println!("{} :{} :{:?} is immutable borrow! if you want to reassign, use &mut:T","Error".red().bold(),s, &val.typeexpr);
+                            println!(
+                                "{} :{} :{:?} is immutable borrow! if you want to reassign, use &mut:T",
+                                "Error".red().bold(),
+                                s,
+                                &val.typeexpr
+                            );
                         }
                         self.builder.build_store(alloca, value.0).unwrap();
                         Some(value)
@@ -1067,6 +1074,58 @@ impl<'ctx> Codegen<'ctx> {
                         Some(VariablesPointerAndTypes {
                             ptr: gep,
                             typeexpr: expr_deref(&a.1),
+                        }),
+                    ))
+                }
+                "[]" => {
+                    // args: [ptr, idx] or [idx, ptr] -> load *(ptr + idx)
+                    let depth = args.len();
+                    let a = self.compile_expr(&args[0], variables).unwrap();
+                    let ptr_val = match a.0 {
+                        BasicValueEnum::PointerValue(p) => p,
+                        _ => panic!("[] expect ptr,i64,i64,... found {:?}", a.1),
+                    };
+
+                    let mut last_ptr = ptr_val;
+                    let mut typeexp = a.1;
+                    for i in 1..depth {
+                        let (val, ty, _p) = self.compile_expr(&args[i], variables).unwrap();
+                        let idx_int = match val {
+                            BasicValueEnum::IntValue(i_val) => self.int_to_i64(i_val),
+                            _ => panic!("[] expect ptr,i64,i64,... found {:?}", ty),
+                        };
+                        let gep = unsafe {
+                            self.builder
+                                .build_gep(
+                                    self.llvm_type_from_expr(&expr_deref(&typeexp)),
+                                    last_ptr,
+                                    &[idx_int],
+                                    "idx_ptr",
+                                )
+                                .unwrap()
+                        };
+                        if i == depth-1{last_ptr = gep;break;}
+                        last_ptr = self
+                            .builder
+                            .build_load(
+                                self.llvm_type_from_expr(&expr_deref(&typeexp)),
+                                gep,
+                                "idx_load",
+                            )
+                            .unwrap().into_pointer_value();
+                        typeexp = expr_deref(&typeexp);
+                    }
+                    typeexp = expr_deref(&typeexp);
+                    let loaded = self
+                        .builder
+                        .build_load(self.llvm_type_from_expr(&typeexp), last_ptr, "idx[]_load")
+                        .unwrap();
+                    Some((
+                        loaded.as_basic_value_enum(),
+                        typeexp.clone(),
+                        Some(VariablesPointerAndTypes {
+                            ptr: last_ptr,
+                            typeexpr: typeexp.clone(),
                         }),
                     ))
                 }
@@ -2721,7 +2780,9 @@ impl<'ctx> Codegen<'ctx> {
         // 終了ブロック
         self.builder.position_at_end(end_block);
         for i in self.scope_owners.show_current() {
-            if let Some(b) = self.current_owners.get(&i.0) && *b {
+            if let Some(b) = self.current_owners.get(&i.0)
+                && *b
+            {
                 println!(
                     "{}:you need to free or drop pointer {}!",
                     "Error".red().bold(),

@@ -34,6 +34,9 @@ struct Args {
     /// clang のパス (環境PATHに通ってる場合は不要)
     #[arg(long, default_value = "clang")]
     clang: String,
+    /// デバッグ用にトークン列とASTを表示
+    #[arg(short, long)]
+    debug: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -46,16 +49,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut tokenizer = Tokenizer::new(source.as_str());
         let tokens = tokenizer.tokenize();
         //デバッグ用にトークン出力
-        let mut j = 0;
-        for i in &tokens {
-            println!("{j}:{:?}", i);
-            j += 1;
+        if args.debug {
+            println!("Tokens");
+            let mut j = 0;
+            for i in &tokens {
+                println!("{j}:{:?}", i);
+                j += 1;
+            }
         }
+
         //構文解析
         let mut import_map: Vec<String> = Vec::new();
         let mut parser = parser::Parser::new(tokens);
         let parsed = parser.parse_program(&mut import_map);
-        println!("{:?}", parsed);//デバッグ用にAST出力
+        //デバッグ用にAST出力
+        if args.debug {
+            println!("AST");
+            let mut j = 0;
+            for i in &parsed.functions {
+                println!("{j}:{:?}", i);
+                j += 1;
+            }
+        }
 
         //IR作成
         let context = Context::create();

@@ -5,6 +5,8 @@ use std::fs;
 pub enum Expr {
     IntNumber(i64),          //i64
     FloatNumber(f64),        //f64
+    IntSNumber(i32),          //i32
+    FloatSNumber(f32),        //f32
     String(String),          //ptr:char=String
     Char(char),              //char
     Bool(bool),              //bool
@@ -394,6 +396,8 @@ impl Parser {
         match token {
             Some(Token::IntNumber(n)) => Expr::IntNumber(*n),
             Some(Token::FloatNumber(n)) => Expr::FloatNumber(*n),
+            Some(Token::IntshortNumber(n)) => Expr::IntSNumber(*n),
+            Some(Token::FloatshortNumber(n)) => Expr::FloatSNumber(*n),
             Some(Token::StringLiteral(s)) => Expr::String(s.clone()),
             Some(Token::CharLiteral(c)) => Expr::Char(*c),
             Some(Token::BoolLiteral(b)) => Expr::Bool(*b),

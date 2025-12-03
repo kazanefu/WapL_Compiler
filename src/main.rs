@@ -37,6 +37,10 @@ struct Args {
     /// デバッグ用にトークン列とASTを表示
     #[arg(short, long)]
     debug: bool,
+
+    /// 実行ファイルなし
+    #[arg(long)]
+    ir: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -86,20 +90,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if !Path::new(&ll_filename).exists() {
             return Err(format!("LLVM IR file not found: {}", ll_filename).into());
         }
-        let status = Command::new(&args.clang)
-            .args([
-                &ll_filename,
-                "-o",
-                &args.output,
-                &format!("-{}", args.opt_level),
-            ])
-            .status()?;
+        if !args.ir {
+            let status = Command::new(&args.clang)
+                .args([
+                    &ll_filename,
+                    "-o",
+                    &args.output,
+                    &format!("-{}", args.opt_level),
+                ])
+                .status()?;
 
-        if !status.success() {
-            return Err("clang failed to compile".into());
+            if !status.success() {
+                return Err("clang failed to compile".into());
+            }
+
+            println!("Build success! → {}", args.output);
         }
 
-        println!("Build success! → {}", args.output);
         Ok(())
     } else {
         println!("コンパイルするファイルを指定してください");

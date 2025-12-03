@@ -376,6 +376,16 @@ impl<'ctx> Codegen<'ctx> {
                 Expr::Ident("f64".to_string()),
                 None,
             )),
+            Expr::IntSNumber(n) => Some((
+                self.context.i32_type().const_int(*n as u64, false).into(),
+                Expr::Ident("i64".to_string()),
+                None,
+            )),
+            Expr::FloatSNumber(n) => Some((
+                self.context.f32_type().const_float((*n).into()).into(),
+                Expr::Ident("f32".to_string()),
+                None,
+            )),
             Expr::Bool(b) => Some((
                 self.context.bool_type().const_int(*b as u64, false).into(),
                 Expr::Ident("bool".to_string()),

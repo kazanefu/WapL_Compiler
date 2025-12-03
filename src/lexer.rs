@@ -3,6 +3,8 @@ pub enum Token {
     Ident(String),
     IntNumber(i64),
     FloatNumber(f64),
+    IntshortNumber(i32),
+    FloatshortNumber(f32),
     StringLiteral(String),
     CharLiteral(char),
     BoolLiteral(bool),
@@ -173,10 +175,16 @@ impl Tokenizer {
         if ch.is_ascii_digit() || ch == '-' {
             let mut s = ch.to_string();
             let mut is_float = false;
+            let mut is_short = false;
             while let Some(c) = self.peek() {
-                if c.is_ascii_digit() || c == '.' {
+                if c.is_ascii_digit() || c == '.' ||c=='s'{
                     if c == '.' {
-                        is_float = true
+                        is_float = true;
+                    }
+                    if c == 's'{
+                        is_short = true;
+                        self.pos += 1;
+                        break;
                     }
                     s.push(c);
                     self.pos += 1;
@@ -186,9 +194,9 @@ impl Tokenizer {
             }
             if s != "-" {
                 if is_float {
-                    return Token::FloatNumber(s.parse::<f64>().unwrap());
+                    return if !is_short{Token::FloatNumber(s.parse::<f64>().unwrap())}else{Token::FloatshortNumber(s.parse::<f32>().unwrap())};
                 } else {
-                    return Token::IntNumber(s.parse::<i64>().unwrap());
+                    return if !is_short{Token::IntNumber(s.parse::<i64>().unwrap())}else{Token::IntshortNumber(s.parse::<i32>().unwrap())};
                 }
             }
         }

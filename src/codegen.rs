@@ -1243,21 +1243,24 @@ impl<'ctx> Codegen<'ctx> {
                     };
 
                     // elem_ty must be IntType , FloatType or PointerType = bool,char,i32,i64,T,f64,f32,ptr,&,&mut,*
-                    let array_ptr = match elem_ty {
-                        BasicTypeEnum::IntType(t) => self
-                            .builder
-                            .build_array_alloca(t, len_val, "array")
-                            .unwrap(),
-                        BasicTypeEnum::FloatType(t) => self
-                            .builder
-                            .build_array_alloca(t, len_val, "array")
-                            .unwrap(),
-                        BasicTypeEnum::PointerType(t) => self
-                            .builder
-                            .build_array_alloca(t, len_val, "array")
-                            .unwrap(),
-                        _ => panic!("alloc_array: unsupported type"),
-                    };
+
+                    let array_ptr = self.builder.build_array_alloca(elem_ty,len_val,"array").unwrap();
+
+                    // let array_ptr = match elem_ty {
+                    //     BasicTypeEnum::IntType(t) => self
+                    //         .builder
+                    //         .build_array_alloca(t, len_val, "array")
+                    //         .unwrap(),
+                    //     BasicTypeEnum::FloatType(t) => self
+                    //         .builder
+                    //         .build_array_alloca(t, len_val, "array")
+                    //         .unwrap(),
+                    //     BasicTypeEnum::PointerType(t) => self
+                    //         .builder
+                    //         .build_array_alloca(t, len_val, "array")
+                    //         .unwrap(),
+                    //     _ => panic!("alloc_array: unsupported type"),
+                    // };
                     // Return as ptr:elem_ty
                     Some((
                         array_ptr.as_basic_value_enum(),

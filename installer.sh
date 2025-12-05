@@ -173,16 +173,49 @@ chmod +x "$BIN/waplup"
 cat << 'EOF' > "$BIN/wapl-cli"
 #!/bin/bash
 
+BASE="$HOME/.wapl"
+CURRENT="$BASE/current"
+
+REPO_USER="kazanefu"
+REPO_NAME="WapL_Compiler"
+
+
 cmd=$1
 shift
+
+# 現在のデフォルトバージョンを取得
+get_default_version() {
+    if [[ ! -e "$CURRENT" ]]; then
+        echo ""
+        return
+    fi
+    basename "$(readlink -f "$CURRENT")"
+}
 
 case "$cmd" in
   new)
     NAME=$1
     mkdir -p "$NAME/src"
     mkdir -p "$NAME/target"
-    echo 'print("Hello, WapL!");' > "$NAME/src/main.wapl"
+    echo 'fn main():i64{ println("Hello, WapL!"); return 0; } main();' > "$NAME/src/main.wapl"
     echo "Created new WapL project: $NAME"
+
+    VERSION=$(get_default_version)
+    if [[ -z "$VERSION" ]]; then
+        echo "No default WapL version is set. std library will NOT be downloaded."
+        exit 0
+    fi
+    STD_URL="https://github.com/$REPO_USER/$REPO_NAME/releases/download/waplc_v$VERSION/std.tar.gz"
+    STD_TAR="$NAME/std.tar.gz"
+    echo "Downloading WapL standard library (version $VERSION)..."
+    if curl -L "$STD_URL" -o "$STD_TAR"; then
+        mkdir -p "$NAME/std"
+        tar -xzf "$STD_TAR" -C "$NAME/std"
+        rm "$STD_TAR"
+        echo "Standard library installed to $NAME/std/"
+    else
+        echo "[WARN] Failed to download std.tar.gz"
+    fi
     ;;
 
   build)
@@ -230,4 +263,5 @@ fi
 echo "Installation complete!"
 echo "Please reload your shell: source ~/.bashrc"
 echo "Example: waplup install latest"
+echo "Recommendation: if you need syntax highlighting for VScode, visit here https://github.com/kazanefu/WapL_SyntaxHighLight/releases/"
 echo "Require: if you don't have Clang installed yet, install it."

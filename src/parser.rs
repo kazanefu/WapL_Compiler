@@ -5,8 +5,8 @@ use std::fs;
 pub enum Expr {
     IntNumber(i64),          //i64
     FloatNumber(f64),        //f64
-    IntSNumber(i32),          //i32
-    FloatSNumber(f32),        //f32
+    IntSNumber(i32),         //i32
+    FloatSNumber(f32),       //f32
     String(String),          //ptr:char=String
     Char(char),              //char
     Bool(bool),              //bool
@@ -70,16 +70,22 @@ pub struct Struct {
 #[derive(Debug, Clone)]
 pub struct Program {
     pub functions: Vec<TopLevel>, //functions & structs & toplevel call
+    pub has_main: bool,
 }
 
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
+    has_main: bool,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, pos: 0 }
+        Self {
+            tokens,
+            pos: 0,
+            has_main: false,
+        }
     }
 
     fn peek(&self) -> Option<&Token> {
@@ -175,17 +181,25 @@ impl Parser {
                 _ => {
                     // toplevel eval
                     let expr = self.parse_expr();
-                    funcs.push(TopLevel::Function(Function {
-                        name: "toplevel_child".to_string(),
-                        return_type: Expr::Ident("void".to_string()),
-                        args: vec![],
-                        body: vec![Stmt { expr }],
-                    }));
+                    match expr {
+                        Expr::Call { name, args: _ } if name == "main" => {}
+                        other => {
+                            funcs.push(TopLevel::Function(Function {
+                                name: "toplevel_child".to_string(),
+                                return_type: Expr::Ident("void".to_string()),
+                                args: vec![],
+                                body: vec![Stmt { expr:other }],
+                            }));
+                        }
+                    }
                 }
             }
         }
 
-        Program { functions: funcs }
+        Program {
+            functions: funcs,
+            has_main: self.has_main,
+        }
     }
 
     // -------------------------
@@ -195,13 +209,16 @@ impl Parser {
     fn parse_function(&mut self) -> Function {
         self.expect(&Token::Fn);
 
+        let mut is_main = false;
         // function name
         let mut name = match self.next() {
             Some(Token::Ident(s)) => s.clone(),
             other => panic!("expected function name, got {:?}", other),
         };
         name = if name == "main" {
-            "user_main".to_string()
+            is_main = true;
+            self.has_main = true;
+            "main".to_string()
         } else {
             name
         };
@@ -238,6 +255,14 @@ impl Parser {
         self.consume_semicolon();
 
         let mut stmts = Vec::new();
+        if is_main {
+            stmts.push(Stmt {
+                expr: Expr::Call {
+                    name: "_TOPLEVEL_".to_string(),
+                    args: vec![],
+                },
+            })
+        }
 
         while let Some(tok) = self.peek() {
             if *tok == Token::Rsep(RSeparator::RBrace) {
@@ -315,7 +340,7 @@ impl Parser {
             other => panic!("expected function name, got {:?}", other),
         };
         name = if name == "main" {
-            "user_main".to_string()
+            "main".to_string()
         } else {
             name
         };
@@ -509,7 +534,7 @@ impl Parser {
             return Expr::ArrayLiteral(args);
         }
         name = if name == "main" {
-            "user_main".to_string()
+            "main".to_string()
         } else {
             name
         };

@@ -103,6 +103,15 @@ impl<'ctx> Codegen<'ctx> {
 
     //compile entire ast
     pub fn compile_program(&mut self, program: Program) {
+        if program.has_main {
+            self.compile_declare(Declare {
+                name: "_TOPLEVEL_".to_string(),
+                return_type: Expr::Ident("i32".to_string()),
+                args: vec![],
+                is_vararg: false,
+            });
+        }
+
         for func in program.functions {
             match func {
                 TopLevel::Function(f) => {
@@ -116,7 +125,7 @@ impl<'ctx> Codegen<'ctx> {
                 }
             }
         }
-        combine_toplevel(&self.module, &self.builder);
+        combine_toplevel(&self.module, &self.builder, program.has_main);
     }
 
     fn compile_function(&mut self, func: Function) {
@@ -1244,7 +1253,10 @@ impl<'ctx> Codegen<'ctx> {
 
                     // elem_ty must be IntType , FloatType or PointerType = bool,char,i32,i64,T,f64,f32,ptr,&,&mut,*
 
-                    let array_ptr = self.builder.build_array_alloca(elem_ty,len_val,"array").unwrap();
+                    let array_ptr = self
+                        .builder
+                        .build_array_alloca(elem_ty, len_val, "array")
+                        .unwrap();
 
                     // let array_ptr = match elem_ty {
                     //     BasicTypeEnum::IntType(t) => self
@@ -2946,7 +2958,7 @@ fn float_bit_width(ft: FloatType) -> u32 {
         panic!("Unsupported float type: {}", name);
     }
 }
-fn combine_toplevel<'ctx>(module: &Module<'ctx>, builder: &Builder<'ctx>) {
+fn combine_toplevel<'ctx>(module: &Module<'ctx>, builder: &Builder<'ctx>, has_main: bool) {
     // 1. モジュール内の <toplevel_child> 関数を収集
     let mut toplevel_funcs: Vec<FunctionValue> = vec![];
 
@@ -2957,25 +2969,35 @@ fn combine_toplevel<'ctx>(module: &Module<'ctx>, builder: &Builder<'ctx>) {
         }
     }
 
-    if toplevel_funcs.is_empty() {
-        return; // まとめるものがない場合
-    }
+    // if toplevel_funcs.is_empty() {
+    //     return; // まとめるものがない場合
+    // }
     // 2. main の関数型を作る: i32 main(i32, i8**)
     let i32_type = module.get_context().i32_type();
     let _i8_ptr_type = module.get_context().ptr_type(AddressSpace::from(0));
-    let main_fn_type = i32_type.fn_type(
+    let mut main_fn_type = i32_type.fn_type(
         &[
             i32_type.into(),
             module.get_context().ptr_type(AddressSpace::from(0)).into(),
         ],
         false,
     );
+    if has_main {
+        main_fn_type = i32_type.fn_type(&[], false);
+    }
     // 3. main 関数を追加
-    let main_fn = module.add_function("main", main_fn_type, None);
-    let argc = main_fn.get_nth_param(0).unwrap();
-    argc.set_name("argc");
-    let argv = main_fn.get_nth_param(1).unwrap();
-    argv.set_name("argv");
+    let main_fn = if !has_main {
+        module.add_function("main", main_fn_type, None)
+    } else {
+        module.get_function("_TOPLEVEL_").unwrap()
+    };
+    if !has_main {
+        let argc = main_fn.get_nth_param(0).unwrap();
+        argc.set_name("argc");
+        let argv = main_fn.get_nth_param(1).unwrap();
+        argv.set_name("argv");
+    }
+
     // 4. エントリーブロック作成
     let entry_bb = module.get_context().append_basic_block(main_fn, "entry");
     builder.position_at_end(entry_bb);

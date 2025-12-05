@@ -230,4 +230,4 @@ fi
 echo "Installation complete!"
 echo "Please reload your shell: source ~/.bashrc"
 echo "Example: waplup install latest"
-
+echo "Require: if you don't have Clang installed yet, install it."

@@ -209,8 +209,8 @@ case "$cmd" in
     STD_TAR="$NAME/std.tar.gz"
     echo "Downloading WapL standard library (version $VERSION)..."
     if curl -L "$STD_URL" -o "$STD_TAR"; then
-        mkdir -p "$NAME/std"
-        tar -xzf "$STD_TAR" -C "$NAME/std"
+        mkdir -p "$NAME"
+        tar -xzf "$STD_TAR" -C "$NAME"
         rm "$STD_TAR"
         echo "Standard library installed to $NAME/std/"
     else

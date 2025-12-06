@@ -260,6 +260,7 @@ case "$cmd" in
     echo "wapl-cli commands:"
     echo "  new <name>"
     echo "  build"
+    echo "  std_load"
     echo "  run"
     ;;
 esac

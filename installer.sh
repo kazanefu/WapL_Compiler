@@ -122,8 +122,10 @@ case "$cmd" in
         exit 1
     fi
 
-    ln -sf "$VERSIONS/$VERSION" "$CURRENT"
-    ln -sf "$VERSIONS/$VERSION/waplc" "$BIN/waplc"
+    TARGET="$(readlink -f "$VERSIONS/$VERSION")"
+
+    ln -sfn "$TARGET" "$CURRENT"
+    ln -sfn "$TARGET/waplc" "$BIN/waplc"
 
     echo "Default compiler set to $VERSION"
     ;;

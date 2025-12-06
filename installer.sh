@@ -238,7 +238,23 @@ case "$cmd" in
     "$0" build
     ./target/main
     ;;
-
+  std_load)
+    VERSION=$(get_default_version)
+    if [[ -z "$VERSION" ]]; then
+        echo "No default WapL version is set. std library will NOT be downloaded."
+        exit 0
+    fi
+    STD_URL="https://github.com/$REPO_USER/$REPO_NAME/releases/download/waplc_v$VERSION/std.tar.gz"
+    STD_TAR="./std.tar.gz"
+    echo "Downloading WapL standard library (version $VERSION)..."
+    if curl -L "$STD_URL" -o "$STD_TAR"; then
+        tar -xzf "$STD_TAR" -C "./"
+        rm "$STD_TAR"
+        echo "Standard library installed to ./std/"
+    else
+        echo "[WARN] Failed to download std.tar.gz"
+    fi
+    ;;
 
   *)
     echo "wapl-cli commands:"

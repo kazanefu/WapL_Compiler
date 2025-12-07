@@ -183,7 +183,6 @@ REPO_NAME="WapL_Compiler"
 
 
 current_dir=$(basename "$PWD")
-echo "$current_dir"
 
 cmd=$1
 shift

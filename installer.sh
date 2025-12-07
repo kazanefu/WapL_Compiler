@@ -182,6 +182,9 @@ REPO_USER="kazanefu"
 REPO_NAME="WapL_Compiler"
 
 
+current_dir=$(basename "$PWD")
+echo "$current_dir"
+
 cmd=$1
 shift
 
@@ -222,7 +225,7 @@ case "$cmd" in
 
   build)
     SRC="./src/main.wapl"
-    OUT="./target/main"
+    OUT="./target/$current_dir"
     mkdir -p "./target"
     "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O O2
     echo "Build complete: $OUT"
@@ -230,7 +233,7 @@ case "$cmd" in
 
   release)
     SRC="./src/main.wapl"
-    OUT="./target/main"
+    OUT="./target/$current_dir"
     mkdir -p "./target"
     "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O O3
     echo "Build complete: $OUT"
@@ -238,7 +241,7 @@ case "$cmd" in
 
   run)
     "$0" build
-    ./target/main
+    ./target/$current_dir
     ;;
   std_load)
     VERSION=$(get_default_version)

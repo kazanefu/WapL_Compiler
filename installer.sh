@@ -199,7 +199,7 @@ case "$cmd" in
     NAME=$1
     mkdir -p "$NAME/src"
     mkdir -p "$NAME/target"
-    echo 'fn main():i64{ println("Hello, WapL!"); return 0; } main();' > "$NAME/src/main.wapl"
+    echo 'fn main():i32{ println("Hello, WapL!"); return 0s; }' > "$NAME/src/main.wapl"
     echo "Created new WapL project: $NAME"
 
     VERSION=$(get_default_version)

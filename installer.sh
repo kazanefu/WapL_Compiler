@@ -78,6 +78,7 @@ case "$cmd" in
     chmod +x "$VERSIONS/$VERSION/waplc"
     ln -sf "$VERSIONS/$VERSION/waplc" "$BIN/waplc"
     ln -sf "$VERSIONS/$VERSION" "$CURRENT"
+    $0 default "$VERSION"
 
     echo "Installed version $VERSION"
     ;;

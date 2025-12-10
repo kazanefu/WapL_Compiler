@@ -387,7 +387,7 @@ impl<'ctx> Codegen<'ctx> {
             )),
             Expr::IntSNumber(n) => Some((
                 self.context.i32_type().const_int(*n as u64, false).into(),
-                Expr::Ident("i64".to_string()),
+                Expr::Ident("i32".to_string()),
                 None,
             )),
             Expr::FloatSNumber(n) => Some((
@@ -568,11 +568,21 @@ impl<'ctx> Codegen<'ctx> {
                     );
                     // if its type is pointer with Ownership, recoad ownership scope and the entire function ownership
                     match &args[2] {
-                        Expr::TypeApply { base, args: _args } if base == "*" => {
+                        Expr::TypeApply { base, args } if base == "*" => {
                             self.current_owners.insert(var_name.clone(), true);
                             self.scope_owners.set_true(var_name.clone());
+                            if !init_val_exist {
+                                println!(
+                                    "{}: {var_name} is Owner (*:{:?}). it must have value",
+                                    "Error".red().bold(),
+                                    args
+                                )
+                            }
                         }
-                        _ => {}
+                        Expr::TypeApply { base:_, args:_ } =>{}
+                        _ => if init_val_exist&&!type_match(&args[2], &init_val.clone().unwrap().1) {
+                            println!("{}: {var_name} Type miss match : expected {:?} found {:?}","Error".red().bold(),&args[2],&init_val.clone().unwrap().1)
+                        },
                     }
 
                     Some((init_val.unwrap().0, Expr::Ident("void".to_string()), None))
@@ -2939,6 +2949,12 @@ impl<'ctx> Codegen<'ctx> {
         }
         self.scope_owners.reset_current();
         self.scope_owners.back();
+    }
+}
+fn type_match(type1: &Expr, type2: &Expr) -> bool {
+    match (type1, type2) {
+        (Expr::Ident(ty1), Expr::Ident(ty2)) => ty1.as_str() == ty2.as_str(),
+        _ => true,
     }
 }
 fn float_bit_width(ft: FloatType) -> u32 {

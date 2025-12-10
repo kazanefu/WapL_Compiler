@@ -262,7 +262,7 @@ EOFTOML
     OPT=$(read_toml build opt "$TOML")
     CLANG=$(read_toml build clang "$TOML")
     mkdir -p "./target"
-    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG"
+    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang $CLANG
     echo "Build complete: $OUT"
     ;;
 
@@ -273,7 +273,7 @@ EOFTOML
     OPT=$(read_toml build opt "$TOML")
     CLANG=$(read_toml build clang "$TOML")
     mkdir -p "./target"
-    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG"
+    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang $CLANG
     echo "Build complete: $OUT"
     ;;
 

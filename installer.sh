@@ -183,15 +183,20 @@ REPO_NAME="WapL_Compiler"
 
 # ===== TOML Reader =====
 read_toml() {
-    local section=$1
-    local key=$2
-    local file=$3
-    awk -F'=' -v sec="[$section]" -v key="$key" '
-        $0 == sec { in=1; next }
-        /^\[/ { in=0 }
-        in && $1 ~ key {
-            gsub(/^[ \t"]+|[ \t"]+$/, "", $2)
-            print $2
+    local section="$1"
+    local key="$2"
+    local file="$3"
+
+    awk -F '=' -v section="$section" -v key="$key" '
+        /^\[/ {
+            gsub(/^\[|\]$/, "", $0)
+            in_section = ($0 == section)
+            next
+        }
+        in_section && $1 ~ ("^" key "$") {
+            val = $2
+            gsub(/^[ \t"]+|[ \t"]+$/, "", val)
+            print val
         }
     ' "$file"
 }

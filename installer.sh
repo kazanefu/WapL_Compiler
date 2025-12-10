@@ -181,6 +181,21 @@ CURRENT="$BASE/current"
 REPO_USER="kazanefu"
 REPO_NAME="WapL_Compiler"
 
+# ===== TOML Reader =====
+read_toml() {
+    local section=$1
+    local key=$2
+    local file=$3
+    awk -F'=' -v sec="[$section]" -v key="$key" '
+        $0 == sec { in=1; next }
+        /^\[/ { in=0 }
+        in && $1 ~ key {
+            gsub(/^[ \t"]+|[ \t"]+$/, "", $2)
+            print $2
+        }
+    ' "$file"
+}
+
 
 current_dir=$(basename "$PWD")
 
@@ -220,21 +235,40 @@ case "$cmd" in
     else
         echo "[WARN] Failed to download std.tar.gz"
     fi
+    cat <<EOF > "$NAME/wapl.toml"
+[build]
+input = "src/main.wapl"
+output = "target/$NAME"
+opt = "O2"
+clang = "clang"
+
+[release]
+input = "src/main.wapl"
+output = "target/$NAME"
+opt = "O3"
+clang = "clang"
+    EOF
     ;;
 
   build)
+    TOML="wapl.toml"
     SRC="./src/main.wapl"
     OUT="./target/$current_dir"
+    OPT=$(read_toml build opt "$TOML")
+    CLANG=$(read_toml build clang "$TOML")
     mkdir -p "./target"
-    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O O2
+    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG"
     echo "Build complete: $OUT"
     ;;
 
   release)
+    TOML="wapl.toml"
     SRC="./src/main.wapl"
     OUT="./target/$current_dir"
+    OPT=$(read_toml build opt "$TOML")
+    CLANG=$(read_toml build clang "$TOML")
     mkdir -p "./target"
-    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O O3
+    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG"
     echo "Build complete: $OUT"
     ;;
 

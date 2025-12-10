@@ -188,15 +188,19 @@ read_toml() {
     local file="$3"
 
     awk -F '=' -v section="$section" -v key="$key" '
-        /^\[/ {
-            gsub(/^\[|\]$/, "", $0)
+        /^[ \t]*\[/ {
+            # section header
+            gsub(/[\[\] \t]/, "", $0)
             in_section = ($0 == section)
             next
         }
-        in_section && $1 ~ ("^" key "$") {
-            val = $2
-            gsub(/^[ \t"]+|[ \t"]+$/, "", val)
-            print val
+        in_section {
+            gsub(/[ \t]/, "", $1)  # key の空白除去
+            if ($1 == key) {
+                val = $2
+                gsub(/^[ \t"]+|[ \t"]+$/, "", val)
+                print val
+            }
         }
     ' "$file"
 }
@@ -262,7 +266,7 @@ EOFTOML
     OPT=$(read_toml build opt "$TOML")
     CLANG=$(read_toml build clang "$TOML")
     mkdir -p "./target"
-    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang $CLANG
+    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG"
     echo "Build complete: $OUT"
     ;;
 
@@ -273,7 +277,7 @@ EOFTOML
     OPT=$(read_toml build opt "$TOML")
     CLANG=$(read_toml build clang "$TOML")
     mkdir -p "./target"
-    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang $CLANG
+    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG"
     echo "Build complete: $OUT"
     ;;
 

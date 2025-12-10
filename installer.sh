@@ -235,7 +235,7 @@ case "$cmd" in
     else
         echo "[WARN] Failed to download std.tar.gz"
     fi
-    cat <<EOF > "$NAME/wapl.toml"
+    cat <<EOFTOML > "$NAME/wapl.toml"
 [build]
 input = "src/main.wapl"
 output = "target/$NAME"
@@ -247,7 +247,7 @@ input = "src/main.wapl"
 output = "target/$NAME"
 opt = "O3"
 clang = "clang"
-    EOF
+EOFTOML
     ;;
 
   build)

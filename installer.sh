@@ -272,10 +272,10 @@ EOFTOML
 
   release)
     TOML="wapl.toml"
-    SRC=$(read_toml build input "$TOML")
-    OUT=$(read_toml build output "$TOML")
-    OPT=$(read_toml build opt "$TOML")
-    CLANG=$(read_toml build clang "$TOML")
+    SRC=$(read_toml release input "$TOML")
+    OUT=$(read_toml release output "$TOML")
+    OPT=$(read_toml release opt "$TOML")
+    CLANG=$(read_toml release clang "$TOML")
     mkdir -p "./target"
     "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG"
     echo "Build complete: $OUT"

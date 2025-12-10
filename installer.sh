@@ -261,8 +261,8 @@ EOFTOML
 
   build)
     TOML="wapl.toml"
-    SRC="./src/main.wapl"
-    OUT="./target/$current_dir"
+    SRC=$(read_toml build input "$TOML")
+    OUT=$(read_toml build output "$TOML")
     OPT=$(read_toml build opt "$TOML")
     CLANG=$(read_toml build clang "$TOML")
     mkdir -p "./target"
@@ -272,8 +272,8 @@ EOFTOML
 
   release)
     TOML="wapl.toml"
-    SRC="./src/main.wapl"
-    OUT="./target/$current_dir"
+    SRC=$(read_toml build input "$TOML")
+    OUT=$(read_toml build output "$TOML")
     OPT=$(read_toml build opt "$TOML")
     CLANG=$(read_toml build clang "$TOML")
     mkdir -p "./target"

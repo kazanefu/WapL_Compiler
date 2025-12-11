@@ -579,10 +579,18 @@ impl<'ctx> Codegen<'ctx> {
                                 )
                             }
                         }
-                        Expr::TypeApply { base:_, args:_ } =>{}
-                        _ => if init_val_exist&&!type_match(&args[2], &init_val.clone().unwrap().1) {
-                            println!("{}: {var_name} Type miss match : expected {:?} found {:?}","Error".red().bold(),&args[2],&init_val.clone().unwrap().1)
-                        },
+                        Expr::TypeApply { base: _, args: _ } => {}
+                        _ => {
+                            if init_val_exist && !type_match(&args[2], &init_val.clone().unwrap().1)
+                            {
+                                println!(
+                                    "{}: {var_name} Type miss match : expected {:?} found {:?}",
+                                    "Error".red().bold(),
+                                    &args[2],
+                                    &init_val.clone().unwrap().1
+                                )
+                            }
+                        }
                     }
 
                     Some((init_val.unwrap().0, Expr::Ident("void".to_string()), None))
@@ -2930,7 +2938,7 @@ impl<'ctx> Codegen<'ctx> {
         self.builder.position_at_end(body_block);
         //本体処理
         for stmt in body {
-            let _value = self.compile_stmt(&stmt,&mut inloop_variables);
+            let _value = self.compile_stmt(&stmt, &mut inloop_variables);
         }
         self.builder.build_unconditional_branch(cond_block).unwrap(); // 再度条件へジャンプ
 

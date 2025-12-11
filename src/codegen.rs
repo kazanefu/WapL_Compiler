@@ -75,7 +75,7 @@ pub struct Codegen<'ctx> {
     pub struct_fields: HashMap<String, Vec<(String, BasicTypeEnum<'ctx>, u32, Expr)>>,
     str_counter: usize, //global str counter
     current_fn: Option<FunctionContext<'ctx>>,
-    pub function_types: HashMap<String, Expr>,
+    pub function_types: HashMap<String, (Expr, bool)>,
     pub current_owners: HashMap<String, bool>,
     pub scope_owners: ScopeOwner,
 }
@@ -127,10 +127,113 @@ impl<'ctx> Codegen<'ctx> {
         }
         combine_toplevel(&self.module, &self.builder, program.has_main);
     }
+    fn compile_declared_function(&mut self, name: String, func: Function) {
+        let return_type_is_void = matches!(func.return_type, Expr::Ident(ref s) if s == "void");
+
+        let return_type_enum = if return_type_is_void {
+            None
+        } else {
+            Some(self.llvm_type_from_expr(&func.return_type))
+        };
+
+        // --- type of arguments ---
+        let arg_types: Vec<BasicTypeEnum> = func
+            .args
+            .iter()
+            .map(|(ty, _)| self.llvm_type_from_expr(ty))
+            .collect();
+
+        // ---convert to Metadata type ---
+        let arg_types_meta: Vec<BasicMetadataTypeEnum> =
+            arg_types.iter().map(|t| (*t).into()).collect();
+
+        // --- LLVM gen function ---
+        let _fn_type = if return_type_is_void {
+            self.context.void_type().fn_type(&arg_types_meta, false)
+        } else {
+            return_type_enum.unwrap().fn_type(&arg_types_meta, false)
+        };
+        let llvm_func = self
+            .module
+            .get_function(&name)
+            .expect(&format!("Function {} not found", name));
+        let entry = self.context.append_basic_block(llvm_func, "entry");
+        self.builder.position_at_end(entry);
+        // --- alloca & initialize args ---
+        self.current_owners = HashMap::new();
+        self.scope_owners = ScopeOwner::new();
+        let mut variables: HashMap<String, VariablesPointerAndTypes<'ctx>> = HashMap::new();
+        for (i, (ty, arg_expr)) in func.args.iter().enumerate() {
+            let param = llvm_func.get_nth_param(i as u32).unwrap();
+
+            // get arg names (Expr::Ident(name))
+            let arg_name = match arg_expr {
+                Expr::Ident(name) => name.as_str(),
+                _ => panic!("Function argument name must be identifier"),
+            };
+            param.set_name(arg_name);
+
+            // alloca anyway
+            let alloca = self
+                .builder
+                .build_alloca(param.get_type(), arg_name)
+                .expect("alloca failed");
+            self.builder.build_store(alloca, param).unwrap();
+            variables.insert(
+                arg_name.to_string(),
+                VariablesPointerAndTypes {
+                    ptr: alloca,
+                    typeexpr: ty.clone(),
+                },
+            );
+            match ty {
+                Expr::TypeApply { base, args: _args } if base == "*" => {
+                    self.current_owners.insert(arg_name.to_string(), true);
+                    self.scope_owners.set_true(arg_name.to_string());
+                }
+                _ => {}
+            }
+        }
+        //alloca return value
+        let _ret_alloca = if !return_type_is_void {
+            Some(
+                self.builder
+                    .build_alloca(return_type_enum.unwrap(), "ret_val"),
+            )
+        } else {
+            None
+        };
+
+        self.current_fn = Some(FunctionContext {
+            function: llvm_func,
+            labels: HashMap::new(),
+            unresolved: HashMap::new(),
+        });
+
+        // --- function body ---
+        for stmt in func.body {
+            let _value = self.compile_stmt(&stmt, &mut variables);
+        }
+
+        // --- temporary return ---
+        if return_type_is_void {
+            self.builder.build_return(None).unwrap();
+        } else {
+            // // 仮に i32 を戻り値として返す
+            // let zero = self.context.i32_type().const_int(0, false);
+            // self.builder.build_return(Some(&zero)).unwrap();
+        }
+        //Exit from the current function
+        self.current_fn = None;
+    }
 
     fn compile_function(&mut self, func: Function) {
-        if self.function_types.contains_key(&func.name) {
+        if self.function_types.contains_key(&func.name) && self.function_types[&func.name].1 {
             panic!("function '{}' already defined", func.name);
+        } else if self.function_types.contains_key(&func.name) && !self.function_types[&func.name].1
+        {
+            self.compile_declared_function(func.name.clone(), func.clone());
+            return;
         }
         // --- type of return value ---
         let return_type_is_void = matches!(func.return_type, Expr::Ident(ref s) if s == "void");
@@ -162,7 +265,7 @@ impl<'ctx> Codegen<'ctx> {
         // --- add function ---
         let llvm_func = self.module.add_function(&func.name, fn_type, None);
         self.function_types
-            .insert(func.name.clone(), func.return_type);
+            .insert(func.name.clone(), (func.return_type, true));
         let entry = self.context.append_basic_block(llvm_func, "entry");
         self.builder.position_at_end(entry);
 
@@ -1687,6 +1790,7 @@ impl<'ctx> Codegen<'ctx> {
                             self.function_types
                                 .get(name)
                                 .expect(&format!("not defined function {}", name))
+                                .0
                                 .clone(),
                             None,
                         ))
@@ -2863,7 +2967,7 @@ impl<'ctx> Codegen<'ctx> {
         // --- add function ---
         let _llvm_func = self.module.add_function(&func.name, fn_type, None);
         self.function_types
-            .insert(func.name.clone(), func.return_type);
+            .insert(func.name.clone(), (func.return_type, false));
     }
 
     fn compile_loopif(

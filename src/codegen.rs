@@ -2930,7 +2930,7 @@ impl<'ctx> Codegen<'ctx> {
         self.builder.position_at_end(body_block);
         //本体処理
         for stmt in body {
-            let _value = self.compile_stmt(&stmt, variables);
+            let _value = self.compile_stmt(&stmt,&mut inloop_variables);
         }
         self.builder.build_unconditional_branch(cond_block).unwrap(); // 再度条件へジャンプ
 

@@ -1359,7 +1359,7 @@ impl<'ctx> Codegen<'ctx> {
                     ))
                 }
                 // Allocate memory on the stack
-                "alloc_array" | "alloc" => {
+                "alloc_array" | "alloc"|"salloc" => {
                     // args: [type_name, length_expr]
 
                     // type of elements

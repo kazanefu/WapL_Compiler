@@ -2930,7 +2930,7 @@ impl<'ctx> Codegen<'ctx> {
         self.module.add_function("scanf", scanf_type, None);
     }
     fn compile_declare(&mut self, func: Declare) {
-        if self.function_types.contains_key(&func.name) {
+        if self.function_types.contains_key(&func.name)&&self.function_types[&func.name].1 {
             panic!("function '{}' already defined", func.name);
         }
         // --- type of return value ---

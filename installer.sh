@@ -284,7 +284,9 @@ EOFTOML
 
   run)
     "$0" build
-    ./target/$current_dir
+    TOML="wapl.toml"
+    OUT=$(read_toml build output "$TOML")
+    $OUT
     ;;
   std_load)
     VERSION=$(get_default_version)

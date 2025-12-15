@@ -1359,7 +1359,7 @@ impl<'ctx> Codegen<'ctx> {
                     ))
                 }
                 // Allocate memory on the stack
-                "alloc_array" | "alloc"|"salloc" => {
+                "alloc_array" | "alloc" | "salloc" => {
                     // args: [type_name, length_expr]
 
                     // type of elements
@@ -1814,32 +1814,18 @@ impl<'ctx> Codegen<'ctx> {
                 .build_float_compare(FloatPredicate::OEQ, a, b, "eq")
                 .unwrap(),
             (BasicValueEnum::PointerValue(a), BasicValueEnum::PointerValue(b)) => {
-                let strcmp_fn = self.module.get_function("strcmp").unwrap_or_else(|| {
-                    let i8ptr_type = self.context.ptr_type(AddressSpace::from(0));
-                    let fn_type = self
-                        .context
-                        .i32_type()
-                        .fn_type(&[i8ptr_type.into(), i8ptr_type.into()], false);
-                    self.module.add_function("strcmp", fn_type, None)
-                });
-
-                let result = self
+                let intptr_ty = self.context.i64_type(); // 64bit 前提
+                let a_i = self
                     .builder
-                    .build_call(strcmp_fn, &[a.into(), b.into()], "strcmp_result")
-                    .unwrap()
-                    .try_as_basic_value()
-                    .basic()
-                    .unwrap()
-                    .into_int_value();
+                    .build_ptr_to_int(a, intptr_ty, "ptr_a_i")
+                    .unwrap();
+                let b_i = self
+                    .builder
+                    .build_ptr_to_int(b, intptr_ty, "ptr_b_i")
+                    .unwrap();
 
-                // strcmp が 0 のとき等しい
                 self.builder
-                    .build_int_compare(
-                        IntPredicate::EQ,
-                        result,
-                        self.context.i32_type().const_int(0, false),
-                        "eq",
-                    )
+                    .build_int_compare(IntPredicate::EQ, a_i, b_i, "eq")
                     .unwrap()
             }
             _ => panic!("Unsupported types for =="),
@@ -1856,32 +1842,18 @@ impl<'ctx> Codegen<'ctx> {
                 .build_float_compare(FloatPredicate::ONE, a, b, "neq")
                 .unwrap(),
             (BasicValueEnum::PointerValue(a), BasicValueEnum::PointerValue(b)) => {
-                let strcmp_fn = self.module.get_function("strcmp").unwrap_or_else(|| {
-                    let i8ptr_type = self.context.ptr_type(AddressSpace::from(0));
-                    let fn_type = self
-                        .context
-                        .i32_type()
-                        .fn_type(&[i8ptr_type.into(), i8ptr_type.into()], false);
-                    self.module.add_function("strcmp", fn_type, None)
-                });
-
-                let result = self
+                let intptr_ty = self.context.i64_type(); // 64bit 前提
+                let a_i = self
                     .builder
-                    .build_call(strcmp_fn, &[a.into(), b.into()], "strcmp_result")
-                    .unwrap()
-                    .try_as_basic_value()
-                    .basic()
-                    .unwrap()
-                    .into_int_value();
+                    .build_ptr_to_int(a, intptr_ty, "ptr_a_i")
+                    .unwrap();
+                let b_i = self
+                    .builder
+                    .build_ptr_to_int(b, intptr_ty, "ptr_b_i")
+                    .unwrap();
 
-                // strcmp が 0 のとき等しい
                 self.builder
-                    .build_int_compare(
-                        IntPredicate::NE,
-                        result,
-                        self.context.i32_type().const_int(0, false),
-                        "neq",
-                    )
+                    .build_int_compare(IntPredicate::NE, a_i, b_i, "neq")
                     .unwrap()
             }
             _ => panic!("Unsupported types for !="),
@@ -1898,35 +1870,21 @@ impl<'ctx> Codegen<'ctx> {
                 .build_float_compare(FloatPredicate::OLT, a, b, "slt")
                 .unwrap(),
             (BasicValueEnum::PointerValue(a), BasicValueEnum::PointerValue(b)) => {
-                let strcmp_fn = self.module.get_function("strcmp").unwrap_or_else(|| {
-                    let i8ptr_type = self.context.ptr_type(AddressSpace::from(0));
-                    let fn_type = self
-                        .context
-                        .i32_type()
-                        .fn_type(&[i8ptr_type.into(), i8ptr_type.into()], false);
-                    self.module.add_function("strcmp", fn_type, None)
-                });
-
-                let result = self
+                let intptr_ty = self.context.i64_type(); // 64bit 前提
+                let a_i = self
                     .builder
-                    .build_call(strcmp_fn, &[a.into(), b.into()], "strcmp_result")
-                    .unwrap()
-                    .try_as_basic_value()
-                    .basic()
-                    .unwrap()
-                    .into_int_value();
+                    .build_ptr_to_int(a, intptr_ty, "ptr_a_i")
+                    .unwrap();
+                let b_i = self
+                    .builder
+                    .build_ptr_to_int(b, intptr_ty, "ptr_b_i")
+                    .unwrap();
 
-                // strcmp が 0 のとき等しい
                 self.builder
-                    .build_int_compare(
-                        IntPredicate::SLT,
-                        result,
-                        self.context.i32_type().const_int(0, false),
-                        "slt",
-                    )
+                    .build_int_compare(IntPredicate::SLT, a_i, b_i, "slt")
                     .unwrap()
             }
-            _ => panic!("Unsupported types for !="),
+            _ => panic!("Unsupported types for <"),
         }
     }
     fn build_gt(&self, val1: BasicValueEnum<'ctx>, val2: BasicValueEnum<'ctx>) -> IntValue<'ctx> {
@@ -1940,35 +1898,21 @@ impl<'ctx> Codegen<'ctx> {
                 .build_float_compare(FloatPredicate::OGT, a, b, "sgt")
                 .unwrap(),
             (BasicValueEnum::PointerValue(a), BasicValueEnum::PointerValue(b)) => {
-                let strcmp_fn = self.module.get_function("strcmp").unwrap_or_else(|| {
-                    let i8ptr_type = self.context.ptr_type(AddressSpace::from(0));
-                    let fn_type = self
-                        .context
-                        .i32_type()
-                        .fn_type(&[i8ptr_type.into(), i8ptr_type.into()], false);
-                    self.module.add_function("strcmp", fn_type, None)
-                });
-
-                let result = self
+                let intptr_ty = self.context.i64_type(); // 64bit 前提
+                let a_i = self
                     .builder
-                    .build_call(strcmp_fn, &[a.into(), b.into()], "strcmp_result")
-                    .unwrap()
-                    .try_as_basic_value()
-                    .basic()
-                    .unwrap()
-                    .into_int_value();
+                    .build_ptr_to_int(a, intptr_ty, "ptr_a_i")
+                    .unwrap();
+                let b_i = self
+                    .builder
+                    .build_ptr_to_int(b, intptr_ty, "ptr_b_i")
+                    .unwrap();
 
-                // strcmp が 0 のとき等しい
                 self.builder
-                    .build_int_compare(
-                        IntPredicate::SGT,
-                        result,
-                        self.context.i32_type().const_int(0, false),
-                        "sgt",
-                    )
+                    .build_int_compare(IntPredicate::SGT, a_i, b_i, "sgt")
                     .unwrap()
             }
-            _ => panic!("Unsupported types for !="),
+            _ => panic!("Unsupported types for >"),
         }
     }
     fn build_le(&self, val1: BasicValueEnum<'ctx>, val2: BasicValueEnum<'ctx>) -> IntValue<'ctx> {
@@ -1982,35 +1926,21 @@ impl<'ctx> Codegen<'ctx> {
                 .build_float_compare(FloatPredicate::OLE, a, b, "sle")
                 .unwrap(),
             (BasicValueEnum::PointerValue(a), BasicValueEnum::PointerValue(b)) => {
-                let strcmp_fn = self.module.get_function("strcmp").unwrap_or_else(|| {
-                    let i8ptr_type = self.context.ptr_type(AddressSpace::from(0));
-                    let fn_type = self
-                        .context
-                        .i32_type()
-                        .fn_type(&[i8ptr_type.into(), i8ptr_type.into()], false);
-                    self.module.add_function("strcmp", fn_type, None)
-                });
-
-                let result = self
+                let intptr_ty = self.context.i64_type(); // 64bit 前提
+                let a_i = self
                     .builder
-                    .build_call(strcmp_fn, &[a.into(), b.into()], "strcmp_result")
-                    .unwrap()
-                    .try_as_basic_value()
-                    .basic()
-                    .unwrap()
-                    .into_int_value();
+                    .build_ptr_to_int(a, intptr_ty, "ptr_a_i")
+                    .unwrap();
+                let b_i = self
+                    .builder
+                    .build_ptr_to_int(b, intptr_ty, "ptr_b_i")
+                    .unwrap();
 
-                // strcmp が 0 のとき等しい
                 self.builder
-                    .build_int_compare(
-                        IntPredicate::SLE,
-                        result,
-                        self.context.i32_type().const_int(0, false),
-                        "sle",
-                    )
+                    .build_int_compare(IntPredicate::SLE, a_i, b_i, "sle")
                     .unwrap()
             }
-            _ => panic!("Unsupported types for !="),
+            _ => panic!("Unsupported types for <="),
         }
     }
     fn build_ge(&self, val1: BasicValueEnum<'ctx>, val2: BasicValueEnum<'ctx>) -> IntValue<'ctx> {
@@ -2024,35 +1954,21 @@ impl<'ctx> Codegen<'ctx> {
                 .build_float_compare(FloatPredicate::OGE, a, b, "sge")
                 .unwrap(),
             (BasicValueEnum::PointerValue(a), BasicValueEnum::PointerValue(b)) => {
-                let strcmp_fn = self.module.get_function("strcmp").unwrap_or_else(|| {
-                    let i8ptr_type = self.context.ptr_type(AddressSpace::from(0));
-                    let fn_type = self
-                        .context
-                        .i32_type()
-                        .fn_type(&[i8ptr_type.into(), i8ptr_type.into()], false);
-                    self.module.add_function("strcmp", fn_type, None)
-                });
-
-                let result = self
+                let intptr_ty = self.context.i64_type(); // 64bit 前提
+                let a_i = self
                     .builder
-                    .build_call(strcmp_fn, &[a.into(), b.into()], "strcmp_result")
-                    .unwrap()
-                    .try_as_basic_value()
-                    .basic()
-                    .unwrap()
-                    .into_int_value();
+                    .build_ptr_to_int(a, intptr_ty, "ptr_a_i")
+                    .unwrap();
+                let b_i = self
+                    .builder
+                    .build_ptr_to_int(b, intptr_ty, "ptr_b_i")
+                    .unwrap();
 
-                // strcmp が 0 のとき等しい
                 self.builder
-                    .build_int_compare(
-                        IntPredicate::SGE,
-                        result,
-                        self.context.i32_type().const_int(0, false),
-                        "sge",
-                    )
+                    .build_int_compare(IntPredicate::SGE, a_i, b_i, "sge")
                     .unwrap()
             }
-            _ => panic!("Unsupported types for !="),
+            _ => panic!("Unsupported types for >="),
         }
     }
     fn int_to_i64(&self, v: IntValue<'ctx>) -> IntValue<'ctx> {
@@ -2557,7 +2473,7 @@ impl<'ctx> Codegen<'ctx> {
         match expr {
             Expr::Ident(name) => {
                 // 変数 a → その変数の生のポインタ（alloca）
-                variables.get(name).expect("Undefined variable").ptr
+                variables.get(name).expect(&format!("Undefined variable{}",name)).ptr
             }
 
             Expr::Call { name, args } if name == "val" || name == "*_" => {
@@ -2930,7 +2846,7 @@ impl<'ctx> Codegen<'ctx> {
         self.module.add_function("scanf", scanf_type, None);
     }
     fn compile_declare(&mut self, func: Declare) {
-        if self.function_types.contains_key(&func.name)&&self.function_types[&func.name].1 {
+        if self.function_types.contains_key(&func.name) && self.function_types[&func.name].1 {
             panic!("function '{}' already defined", func.name);
         }
         // --- type of return value ---

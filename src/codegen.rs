@@ -1011,8 +1011,13 @@ impl<'ctx> Codegen<'ctx> {
                     }
                 }
                 // Bool Operations
-                // && = and, || = or
-                "&&" | "||" | "and" | "or" => {
+                "&&" | "and" => self.build_andand(
+                    args.get(0).expect("&& need 2 args"),
+                    args.get(1).expect("&& need 2 args"),
+                    variables,
+                ),
+                // &&& = andand, || = or
+                "&&&" | "||" | "andand" | "or" => {
                     let compiled_args: Vec<(
                         BasicValueEnum,
                         Expr,
@@ -1033,7 +1038,7 @@ impl<'ctx> Codegen<'ctx> {
                         _ => panic!("{} require bool values", name.as_str()),
                     };
                     let v = match name.as_str() {
-                        "&&" | "and" => Some(
+                        "&&&" | "andand" => Some(
                             self.builder
                                 .build_and(lhs_i1, rhs_i1, "and")
                                 .unwrap()
@@ -1128,10 +1133,10 @@ impl<'ctx> Codegen<'ctx> {
                         _ => None,
                     }
                 }
-                // Pure if expression: if(cond, then_val, else_val)
+                // Pure choose expression: choose(cond, then_val, else_val)
                 // Both 'then_val' and 'else_val' are always evaluated.
                 // Avoid side effects in either branch.
-                "if" => {
+                "choose" => {
                     let compiled_args: Vec<(BasicValueEnum, Expr, Option<_>)> = args
                         .into_iter()
                         .map(|arg| {
@@ -1144,12 +1149,19 @@ impl<'ctx> Codegen<'ctx> {
                             compiled_args[0].0,
                             compiled_args[1].0,
                             compiled_args[2].0,
-                            "if",
+                            "choose",
                         ),
                         compiled_args[1].clone().1,
                         None,
                     ))
                 }
+                // if expression: if(cond, then_val, else_val)
+                "if" => self.build_if_no_ef_expr(
+                    args.get(0).expect("if: failed get condition"),
+                    args.get(1).expect("if: failed get then"),
+                    args.get(2).expect("if: failed get else"),
+                    variables,
+                ),
                 // Print with newline
                 "println" => {
                     let s_val = self.compile_expr(&args[0], variables).unwrap();
@@ -2210,6 +2222,68 @@ impl<'ctx> Codegen<'ctx> {
             .unwrap()
     }
 
+    fn build_if_no_ef_expr(
+        &mut self,
+        cond_expr: &Expr,
+        then_expr: &Expr,
+        else_expr: &Expr,
+        variables: &mut HashMap<String, VariablesPointerAndTypes<'ctx>>,
+    ) -> Option<(
+        BasicValueEnum<'ctx>,
+        Expr,
+        Option<VariablesPointerAndTypes<'ctx>>,
+    )> {
+        let (cond_val,cond_ty,_) = self.compile_expr(cond_expr, variables)?;
+        match cond_ty{
+            Expr::Ident(s) if s != "bool"=>{println!("{:?} need to be bool because it is condition of if",cond_expr)},
+            _=>{}
+        }
+        let cond_i1 = cond_val.into_int_value();
+
+        let current_bb = self.builder.get_insert_block().unwrap();
+        let function = current_bb.get_parent().unwrap();
+
+        let then_bb = self.context.append_basic_block(function, "if.then");
+        let else_bb = self.context.append_basic_block(function, "if.else");
+        let merge_bb = self.context.append_basic_block(function, "if.merge");
+        // 分岐
+        self.builder
+            .build_conditional_branch(cond_i1, then_bb, else_bb)
+            .unwrap();
+        // then
+        self.builder.position_at_end(then_bb);
+        let (then_val, then_ty, _) = self.compile_expr(then_expr, variables)?;
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
+        let then_end = self.builder.get_insert_block().unwrap();
+        // else
+        self.builder.position_at_end(else_bb);
+        let (else_val, else_ty, _) = self.compile_expr(else_expr, variables)?;
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
+        let else_end = self.builder.get_insert_block().unwrap();
+
+        let result_ty = match (then_ty.clone(), else_ty.clone()) {
+            (Expr::Ident(thenty), Expr::Ident(elsety)) => {
+                if thenty != elsety {
+                    println!("if type miss match then:{},else:{}", thenty, elsety);
+                    then_ty.clone()
+                }else{
+                    then_ty.clone()
+                }
+            }
+            _ => then_ty.clone()
+        };
+        // merge
+        self.builder.position_at_end(merge_bb);
+        let phi = self
+            .builder
+            .build_phi(self.llvm_type_from_expr(&result_ty), "if.result")
+            .expect("if phi failed");
+
+        phi.add_incoming(&[(&then_val, then_end), (&else_val, else_end)]);
+
+        Some((phi.as_basic_value(), result_ty, None))
+    }
+
     fn call_intrinsic(
         &mut self,
         intrinsic_name: &str,
@@ -2473,7 +2547,10 @@ impl<'ctx> Codegen<'ctx> {
         match expr {
             Expr::Ident(name) => {
                 // 変数 a → その変数の生のポインタ（alloca）
-                variables.get(name).expect(&format!("Undefined variable{}",name)).ptr
+                variables
+                    .get(name)
+                    .expect(&format!("Undefined variable{}", name))
+                    .ptr
             }
 
             Expr::Call { name, args } if name == "val" || name == "*_" => {
@@ -2977,6 +3054,62 @@ impl<'ctx> Codegen<'ctx> {
         }
         self.scope_owners.reset_current();
         self.scope_owners.back();
+    }
+    fn build_andand(
+        &mut self,
+        lhs_expr: &Expr,
+        rhs_expr: &Expr,
+        variables: &mut HashMap<String, VariablesPointerAndTypes<'ctx>>,
+    ) -> Option<(
+        BasicValueEnum<'ctx>,
+        Expr,
+        Option<VariablesPointerAndTypes<'ctx>>,
+    )> {
+        // lhs を評価
+        let lhs = self
+            .compile_expr(lhs_expr, variables)
+            .unwrap()
+            .0
+            .into_int_value();
+
+        let current_bb = self.builder.get_insert_block().unwrap();
+        let function = current_bb.get_parent().unwrap();
+
+        let rhs_bb = self.context.append_basic_block(function, "and.rhs");
+        let false_bb = self.context.append_basic_block(function, "and.false");
+        let merge_bb = self.context.append_basic_block(function, "and.merge");
+
+        // lhs による分岐
+        self.builder
+            .build_conditional_branch(lhs, rhs_bb, false_bb)
+            .unwrap();
+
+        // rhs 評価
+        self.builder.position_at_end(rhs_bb);
+        let rhs = self
+            .compile_expr(rhs_expr, variables)
+            .unwrap()
+            .0
+            .into_int_value();
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
+        let rhs_end = self.builder.get_insert_block().unwrap();
+
+        // false 側
+        self.builder.position_at_end(false_bb);
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
+        let false_end = self.builder.get_insert_block().unwrap();
+
+        // merge
+        self.builder.position_at_end(merge_bb);
+        let phi = self
+            .builder
+            .build_phi(self.context.bool_type(), "and.result")
+            .expect("\"&&\" failed phi");
+        phi.add_incoming(&[
+            (&rhs, rhs_end),
+            (&self.context.bool_type().const_int(0, false), false_end),
+        ]);
+        Some((phi.as_basic_value(), Expr::Ident("bool".to_string()), None))
     }
 }
 fn type_match(type1: &Expr, type2: &Expr) -> bool {

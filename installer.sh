@@ -181,6 +181,7 @@ CURRENT="$BASE/current"
 
 REPO_USER="kazanefu"
 REPO_NAME="WapL_Compiler"
+LIBREPO_NAME="WapL_Library"
 
 # ===== TOML Reader =====
 read_toml() {
@@ -303,6 +304,21 @@ EOFTOML
         echo "Standard library installed to ./std/"
     else
         echo "[WARN] Failed to download std.tar.gz"
+    fi
+    ;;
+  get_lib)
+    NAME=$1
+    VERSION=$2
+    LIB_URL="https://github.com/$REPO_USER/$LIBREPO_NAME/releases/download/$NAME_v$VERSION/$NAME.tar.gz"
+    LIB_TAR="./$NAME.tar.gz"
+    mkdir -p "./lib"
+    echo "Downloading $NAME library (version $VERSION)..."
+    if curl -L "$LIB_URL" -o "$LIB_TAR"; then
+        tar -xzf "$LIB_TAR" -C "./lib/"
+        rm "$LIB_TAR"
+        echo "Standard library installed to ./lib/$NAME/"
+    else
+        echo "[WARN] Failed to download $NAME.tar.gz"
     fi
     ;;
 

@@ -381,11 +381,12 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         stmt: &Stmt,
         variables: &mut HashMap<String, VariablesPointerAndTypes<'ctx>>,
-    ) {
+    )->bool {
         match &stmt.expr {
             Expr::IntNumber(_) | Expr::FloatNumber(_) | Expr::Call { .. } | Expr::Ident(_) => {
                 // compile_expr
                 self.compile_expr(&stmt.expr, variables);
+                true
             }
             Expr::Point(labels) => {
                 let label_name = match &labels[0] {
@@ -393,6 +394,7 @@ impl<'ctx> Codegen<'ctx> {
                     _ => None,
                 };
                 self.gen_point(label_name.expect("point: missing label literal"));
+                true
             }
             Expr::Warp { name, args } => match name.as_str() {
                 "warpto" => {
@@ -402,6 +404,7 @@ impl<'ctx> Codegen<'ctx> {
                         _ => None,
                     };
                     self.gen_warpto(label_name.expect("point: missing label literal"));
+                    true
                 }
                 "warptoif" => {
                     // compile condition value
@@ -426,6 +429,7 @@ impl<'ctx> Codegen<'ctx> {
                         label_name1.expect("point: missing label literal"),
                         label_name2,
                     );
+                    true
                 }
                 _ => {
                     panic!("warp:not (warpto or warptoif)");
@@ -455,6 +459,7 @@ impl<'ctx> Codegen<'ctx> {
                     }
                 }
                 self.scope_owners.reset_current();
+                false
             }
             Expr::Loopif { name, cond, body } => {
                 if cond.len() != 1 {
@@ -462,12 +467,13 @@ impl<'ctx> Codegen<'ctx> {
                 }
 
                 self.compile_loopif(name, &cond[0], body, variables);
+                false
             }
             Expr::If {
                 branches,
                 else_block,
             } => {
-                self.compile_if(branches.clone(), else_block.clone(), variables);
+                self.compile_if(branches.clone(), else_block.clone(), variables)
             }
             _ => unimplemented!(),
         }
@@ -3127,7 +3133,7 @@ impl<'ctx> Codegen<'ctx> {
         branches: Vec<IfBranch>,
         else_block: Option<Vec<Stmt>>,
         variables: &mut HashMap<String, VariablesPointerAndTypes<'ctx>>,
-    ) {
+    )->bool {
         let current_fn = self.current_fn.as_mut().expect("Not in a function");
         let end_bb = self
             .context
@@ -3152,6 +3158,7 @@ impl<'ctx> Codegen<'ctx> {
         } else {
             None
         };
+        let mut all_unreachable = true;
         self.builder
             .build_unconditional_branch(cond_bbs[0])
             .unwrap(); // ifの条件のとこにジャンプ
@@ -3181,10 +3188,12 @@ impl<'ctx> Codegen<'ctx> {
                 .build_conditional_branch(cond, then_bbs[i], false_target)
                 .unwrap();
             self.builder.position_at_end(then_bbs[i]);
+            let mut reachable = true;
             for stmt in &branch.body {
-                let _value = self.compile_stmt(stmt, &mut inif_variables);
+                let reached = self.compile_stmt(stmt, &mut inif_variables);
+                if !reached{reachable = false;}
             }
-            self.builder.build_unconditional_branch(end_bb).unwrap();
+            if reachable{self.builder.build_unconditional_branch(end_bb).unwrap();all_unreachable = false;}
             for i in self.scope_owners.show_current() {
                 if let Some(b) = self.current_owners.get(&i.0)
                     && *b
@@ -3199,14 +3208,17 @@ impl<'ctx> Codegen<'ctx> {
             self.scope_owners.reset_current();
             self.scope_owners.back(); // スタックを戻す
         }
+        let mut else_reachable = true;
         if let Some(else_bb) = else_bb {
             let mut inif_variables = variables.clone();
             self.scope_owners.next();
             self.builder.position_at_end(else_bb);
+            
             for stmt in &else_block.unwrap() {
-                let _value = self.compile_stmt(stmt, &mut inif_variables);
+                let reached = self.compile_stmt(stmt, &mut inif_variables);
+                if !reached{else_reachable = false;}
             }
-            self.builder.build_unconditional_branch(end_bb).unwrap();
+            if else_reachable{self.builder.build_unconditional_branch(end_bb).unwrap();}
             for i in self.scope_owners.show_current() {
                 if let Some(b) = self.current_owners.get(&i.0)
                     && *b
@@ -3221,7 +3233,8 @@ impl<'ctx> Codegen<'ctx> {
             self.scope_owners.reset_current();
             self.scope_owners.back(); // スタックを戻す
         }
-        self.builder.position_at_end(end_bb);
+        if else_reachable||!all_unreachable{self.builder.position_at_end(end_bb);}
+        else_reachable||!all_unreachable
     }
 }
 fn type_match(type1: &Expr, type2: &Expr) -> bool {

@@ -35,6 +35,15 @@ pub enum Expr {
         cond: Vec<Expr>,
         body: Vec<Stmt>,
     }, //loopif:name(cond){do}
+    If {
+        branches: Vec<IfBranch>,
+        else_block: Option<Vec<Stmt>>,
+    },
+}
+#[derive(Debug, Clone)]
+pub struct IfBranch {
+    pub cond: Vec<Expr>,
+    pub body: Vec<Stmt>,
 }
 #[derive(Debug, Clone)]
 pub struct Stmt {
@@ -188,7 +197,7 @@ impl Parser {
                                 name: "toplevel_child".to_string(),
                                 return_type: Expr::Ident("void".to_string()),
                                 args: vec![],
-                                body: vec![Stmt { expr:other }],
+                                body: vec![Stmt { expr: other }],
                             }));
                         }
                     }
@@ -431,6 +440,7 @@ impl Parser {
             Some(Token::Warpto) => self.parse_call("warpto".to_string()),
             Some(Token::WarptoIf) => self.parse_call("warptoif".to_string()),
             Some(Token::LoopIf) => self.parse_loopif(),
+            Some(Token::If) => self.parse_if(),
             Some(Token::ArrayCall) => self.parse_call("Array".to_string()),
             Some(Token::Ident(name)) => self.parse_ident_expr(name.clone()),
             Some(tok) => panic!(
@@ -540,6 +550,79 @@ impl Parser {
         };
         self.consume_semicolon();
         Expr::Call { name, args }
+    }
+    fn parse_if(&mut self) -> Expr {
+        let mut has_else = false;
+        let mut branches = Vec::new();
+        let mut else_block = None;
+
+
+        loop {
+            match self.next() {
+                Some(Token::Lsep(LSeparator::LParen)) => {}
+                other =>if !has_else{panic!("expected '(' after if got {:?}", other);}else{self.no_return_back();} ,
+            }
+
+            let mut args = Vec::new();
+
+            loop {
+                if has_else{
+                    break;
+                }
+                match self.peek() {
+                    Some(Token::Rsep(RSeparator::RParen)) => {
+                        self.next();
+                        break;
+                    }
+                    _ => {
+                        let arg = self.parse_expr();
+                        args.push(arg);
+                        self.consume_comma();
+                    }
+                }
+            }
+
+            // { statements }
+            self.expect(&Token::Lsep(LSeparator::LBrace));
+            self.consume_semicolon();
+
+            let mut stmts = Vec::new();
+
+            while let Some(tok) = self.peek() {
+                if *tok == Token::Rsep(RSeparator::RBrace) {
+                    break;
+                }
+                // optional ;
+                if let Some(Token::Semicolon) = self.peek() {
+                    self.next();
+                }
+
+                let expr = self.parse_expr();
+                stmts.push(Stmt { expr });
+
+                // optional ;
+                if let Some(Token::Semicolon) = self.peek() {
+                    self.next();
+                }
+            }
+
+            self.expect(&Token::Rsep(RSeparator::RBrace));
+            self.consume_semicolon();
+            if has_else{
+                else_block = Some(stmts);
+                break;
+            }else {
+                branches.push(IfBranch { cond: args, body: stmts });
+            }
+            match self.next().unwrap() {
+                Token::ElIf=>{},
+                Token::Else=>{has_else = true;},
+                _ => {self.no_return_back();break;}                
+            }
+            
+        }
+
+        Expr::If { branches, else_block}
     }
     fn parse_loopif(&mut self) -> Expr {
         self.expect(&Token::Colon);

@@ -463,6 +463,12 @@ impl<'ctx> Codegen<'ctx> {
 
                 self.compile_loopif(name, &cond[0], body, variables);
             }
+            Expr::If {
+                branches,
+                else_block,
+            } => {
+                self.compile_if(branches.clone(), else_block.clone(), variables);
+            }
             _ => unimplemented!(),
         }
     }
@@ -1156,10 +1162,10 @@ impl<'ctx> Codegen<'ctx> {
                     ))
                 }
                 // if expression: if(cond, then_val, else_val)
-                "if" => self.build_if_no_ef_expr(
-                    args.get(0).expect("if: failed get condition"),
-                    args.get(1).expect("if: failed get then"),
-                    args.get(2).expect("if: failed get else"),
+                "?" => self.build_if_no_ef_expr(
+                    args.get(0).expect("?: failed get condition"),
+                    args.get(1).expect("?: failed get then"),
+                    args.get(2).expect("?: failed get else"),
                     variables,
                 ),
                 // Print with newline
@@ -2233,10 +2239,15 @@ impl<'ctx> Codegen<'ctx> {
         Expr,
         Option<VariablesPointerAndTypes<'ctx>>,
     )> {
-        let (cond_val,cond_ty,_) = self.compile_expr(cond_expr, variables)?;
-        match cond_ty{
-            Expr::Ident(s) if s != "bool"=>{println!("{:?} need to be bool because it is condition of if",cond_expr)},
-            _=>{}
+        let (cond_val, cond_ty, _) = self.compile_expr(cond_expr, variables)?;
+        match cond_ty {
+            Expr::Ident(s) if s != "bool" => {
+                println!(
+                    "{:?} need to be bool because it is condition of if",
+                    cond_expr
+                )
+            }
+            _ => {}
         }
         let cond_i1 = cond_val.into_int_value();
 
@@ -2266,11 +2277,11 @@ impl<'ctx> Codegen<'ctx> {
                 if thenty != elsety {
                     println!("if type miss match then:{},else:{}", thenty, elsety);
                     then_ty.clone()
-                }else{
+                } else {
                     then_ty.clone()
                 }
             }
-            _ => then_ty.clone()
+            _ => then_ty.clone(),
         };
         // merge
         self.builder.position_at_end(merge_bb);
@@ -3110,6 +3121,107 @@ impl<'ctx> Codegen<'ctx> {
             (&self.context.bool_type().const_int(0, false), false_end),
         ]);
         Some((phi.as_basic_value(), Expr::Ident("bool".to_string()), None))
+    }
+    fn compile_if(
+        &mut self,
+        branches: Vec<IfBranch>,
+        else_block: Option<Vec<Stmt>>,
+        variables: &mut HashMap<String, VariablesPointerAndTypes<'ctx>>,
+    ) {
+        let current_fn = self.current_fn.as_mut().expect("Not in a function");
+        let end_bb = self
+            .context
+            .append_basic_block(current_fn.function, "if.end");
+        let mut cond_bbs = Vec::new();
+        let mut then_bbs = Vec::new();
+        for i in 0..branches.len() {
+            cond_bbs.push(
+                self.context
+                    .append_basic_block(current_fn.function, &format!("if.cond.{i}")),
+            );
+            then_bbs.push(
+                self.context
+                    .append_basic_block(current_fn.function, &format!("if.then.{i}")),
+            );
+        }
+        let else_bb = if else_block.is_some() {
+            Some(
+                self.context
+                    .append_basic_block(current_fn.function, "if.else"),
+            )
+        } else {
+            None
+        };
+        self.builder
+            .build_unconditional_branch(cond_bbs[0])
+            .unwrap(); // ifの条件のとこにジャンプ
+        for (i, branch) in branches.iter().enumerate() {
+            if branch.cond.len() != 1 {
+                println!("if or elif: conditions must have exactly one value");
+            }
+            let mut inif_variables = variables.clone(); // 新しいスコープ
+            self.scope_owners.next(); // 所有権マップのスタックを積む
+            self.builder.position_at_end(cond_bbs[i]); // 条件式のとこに行く
+            let cond = match self
+                .compile_expr(&branches[i].cond[0], &mut inif_variables)
+                .unwrap()
+                .0
+            {
+                BasicValueEnum::IntValue(i) => i,
+                _ => panic!("if conditions must have exactly i1 value"),
+            };
+
+            let false_target = if i + 1 < branches.len() {
+                cond_bbs[i + 1]
+            } else {
+                else_bb.unwrap_or(end_bb)
+            };
+
+            self.builder
+                .build_conditional_branch(cond, then_bbs[i], false_target)
+                .unwrap();
+            self.builder.position_at_end(then_bbs[i]);
+            for stmt in &branch.body {
+                let _value = self.compile_stmt(stmt, &mut inif_variables);
+            }
+            self.builder.build_unconditional_branch(end_bb).unwrap();
+            for i in self.scope_owners.show_current() {
+                if let Some(b) = self.current_owners.get(&i.0)
+                    && *b
+                {
+                    println!(
+                        "{}:you need to free or drop pointer {}!",
+                        "Error".red().bold(),
+                        i.0
+                    );
+                }
+            }
+            self.scope_owners.reset_current();
+            self.scope_owners.back(); // スタックを戻す
+        }
+        if let Some(else_bb) = else_bb {
+            let mut inif_variables = variables.clone();
+            self.scope_owners.next();
+            self.builder.position_at_end(else_bb);
+            for stmt in &else_block.unwrap() {
+                let _value = self.compile_stmt(stmt, &mut inif_variables);
+            }
+            self.builder.build_unconditional_branch(end_bb).unwrap();
+            for i in self.scope_owners.show_current() {
+                if let Some(b) = self.current_owners.get(&i.0)
+                    && *b
+                {
+                    println!(
+                        "{}:you need to free or drop pointer {}!",
+                        "Error".red().bold(),
+                        i.0
+                    );
+                }
+            }
+            self.scope_owners.reset_current();
+            self.scope_owners.back(); // スタックを戻す
+        }
+        self.builder.position_at_end(end_bb);
     }
 }
 fn type_match(type1: &Expr, type2: &Expr) -> bool {

@@ -19,6 +19,9 @@ pub enum Token {
     Import,
     LoopIf,
     Declare,
+    If,
+    ElIf,
+    Else,
 
     // signs & operators
     Comma,
@@ -243,6 +246,9 @@ impl Tokenizer {
                 "import" | "use" => Token::Import,
                 "loopif" => Token::LoopIf,
                 "declare" => Token::Declare,
+                "if"=>Token::If,
+                "elif"=>Token::ElIf,
+                "else"=>Token::Else,
                 _ => Token::Ident(s),
             };
         }

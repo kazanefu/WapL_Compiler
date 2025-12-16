@@ -309,7 +309,7 @@ EOFTOML
   get_lib)
     NAME=$1
     VERSION=$2
-    LIB_URL="https://github.com/$REPO_USER/$LIBREPO_NAME/releases/download/$NAME_v$VERSION/$NAME.tar.gz"
+    LIB_URL="https://github.com/$REPO_USER/$LIBREPO_NAME/releases/download/${NAME}_v${VERSION}/${NAME}.tar.gz"
     LIB_TAR="./$NAME.tar.gz"
     mkdir -p "./lib"
     echo "Downloading $NAME library (version $VERSION)..."

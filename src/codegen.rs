@@ -381,7 +381,7 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         stmt: &Stmt,
         variables: &mut HashMap<String, VariablesPointerAndTypes<'ctx>>,
-    )->bool {
+    ) -> bool {
         match &stmt.expr {
             Expr::IntNumber(_) | Expr::FloatNumber(_) | Expr::Call { .. } | Expr::Ident(_) => {
                 // compile_expr
@@ -472,9 +472,7 @@ impl<'ctx> Codegen<'ctx> {
             Expr::If {
                 branches,
                 else_block,
-            } => {
-                self.compile_if(branches.clone(), else_block.clone(), variables)
-            }
+            } => self.compile_if(branches.clone(), else_block.clone(), variables),
             _ => unimplemented!(),
         }
     }
@@ -3133,28 +3131,35 @@ impl<'ctx> Codegen<'ctx> {
         branches: Vec<IfBranch>,
         else_block: Option<Vec<Stmt>>,
         variables: &mut HashMap<String, VariablesPointerAndTypes<'ctx>>,
-    )->bool {
-        let current_fn = self.current_fn.as_mut().expect("Not in a function");
-        let end_bb = self
-            .context
-            .append_basic_block(current_fn.function, "if.end");
+    ) -> bool {
+        let current_fn = self
+            .current_fn
+            .as_mut()
+            .expect("Not in a function")
+            .function; //.as_mut().expect("Not in a function");
+        // let end_bb = self
+        //     .context
+        //     .append_basic_block(current_fn, "if.end");
+        let mut end_bb: Option<BasicBlock<'_>> = None;
+        let else_exist = match else_block {
+            Some(_) => true,
+            None => false,
+        };
+        let mut end_bb_exist = false;
         let mut cond_bbs = Vec::new();
         let mut then_bbs = Vec::new();
         for i in 0..branches.len() {
             cond_bbs.push(
                 self.context
-                    .append_basic_block(current_fn.function, &format!("if.cond.{i}")),
+                    .append_basic_block(current_fn, &format!("if.cond.{i}")),
             );
             then_bbs.push(
                 self.context
-                    .append_basic_block(current_fn.function, &format!("if.then.{i}")),
+                    .append_basic_block(current_fn, &format!("if.then.{i}")),
             );
         }
         let else_bb = if else_block.is_some() {
-            Some(
-                self.context
-                    .append_basic_block(current_fn.function, "if.else"),
-            )
+            Some(self.context.append_basic_block(current_fn, "if.else"))
         } else {
             None
         };
@@ -3181,7 +3186,16 @@ impl<'ctx> Codegen<'ctx> {
             let false_target = if i + 1 < branches.len() {
                 cond_bbs[i + 1]
             } else {
-                else_bb.unwrap_or(end_bb)
+                if !end_bb_exist && !else_exist {
+                    end_bb = Some(self.context.append_basic_block(current_fn, "if.end"));
+                    end_bb_exist = true;
+                }
+                if else_exist{
+                    else_bb.unwrap()
+                }else{
+                    end_bb.unwrap()
+                }
+                //else_bb.unwrap_or(end_bb.unwrap())
             };
 
             self.builder
@@ -3191,9 +3205,20 @@ impl<'ctx> Codegen<'ctx> {
             let mut reachable = true;
             for stmt in &branch.body {
                 let reached = self.compile_stmt(stmt, &mut inif_variables);
-                if !reached{reachable = false;}
+                if !reached {
+                    reachable = false;
+                }
             }
-            if reachable{self.builder.build_unconditional_branch(end_bb).unwrap();all_unreachable = false;}
+            if reachable {
+                if !end_bb_exist {
+                    end_bb = Some(self.context.append_basic_block(current_fn, "if.end"));
+                    end_bb_exist = true;
+                }
+                self.builder
+                    .build_unconditional_branch(end_bb.unwrap())
+                    .unwrap();
+                all_unreachable = false;
+            }
             for i in self.scope_owners.show_current() {
                 if let Some(b) = self.current_owners.get(&i.0)
                     && *b
@@ -3213,12 +3238,20 @@ impl<'ctx> Codegen<'ctx> {
             let mut inif_variables = variables.clone();
             self.scope_owners.next();
             self.builder.position_at_end(else_bb);
-            
+
             for stmt in &else_block.unwrap() {
                 let reached = self.compile_stmt(stmt, &mut inif_variables);
-                if !reached{else_reachable = false;}
+                if !reached {
+                    else_reachable = false;
+                }
             }
-            if else_reachable{self.builder.build_unconditional_branch(end_bb).unwrap();}
+            if else_reachable {
+                if !end_bb_exist {
+                    end_bb = Some(self.context.append_basic_block(current_fn, "if.end"));
+                    end_bb_exist = true;
+                }
+                self.builder.build_unconditional_branch(end_bb.unwrap()).unwrap();
+            }
             for i in self.scope_owners.show_current() {
                 if let Some(b) = self.current_owners.get(&i.0)
                     && *b
@@ -3233,8 +3266,10 @@ impl<'ctx> Codegen<'ctx> {
             self.scope_owners.reset_current();
             self.scope_owners.back(); // スタックを戻す
         }
-        if else_reachable||!all_unreachable{self.builder.position_at_end(end_bb);}
-        else_reachable||!all_unreachable
+        if else_reachable || !all_unreachable {
+            self.builder.position_at_end(end_bb.unwrap());
+        }
+        end_bb_exist
     }
 }
 fn type_match(type1: &Expr, type2: &Expr) -> bool {

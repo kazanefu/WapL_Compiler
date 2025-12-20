@@ -1,6 +1,7 @@
 use colored::*;
 use inkwell::AddressSpace;
 use inkwell::FloatPredicate;
+use inkwell::InlineAsmDialect;
 use inkwell::IntPredicate;
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
@@ -66,7 +67,10 @@ impl ScopeOwner {
         self.owners[self.pos].clone()
     }
 }
-
+struct GlobalVar<'ctx> {
+    ptr: GlobalValue<'ctx>,
+    ty_ast: Expr,
+}
 pub struct Codegen<'ctx> {
     pub context: &'ctx Context,
     pub module: Module<'ctx>,
@@ -78,6 +82,7 @@ pub struct Codegen<'ctx> {
     pub function_types: HashMap<String, (Expr, bool)>,
     pub current_owners: HashMap<String, bool>,
     pub scope_owners: ScopeOwner,
+    global_variables: HashMap<String, GlobalVar<'ctx>>,
 }
 
 impl<'ctx> Codegen<'ctx> {
@@ -96,6 +101,7 @@ impl<'ctx> Codegen<'ctx> {
             function_types: HashMap::new(),
             current_owners: HashMap::new(),
             scope_owners: ScopeOwner::new(),
+            global_variables: HashMap::new(),
         };
         this.init_external_functions(); // declare C functions  
         this
@@ -630,6 +636,91 @@ impl<'ctx> Codegen<'ctx> {
                         .unwrap();
                     Some((loaded.as_basic_value_enum(), load_type.clone(), None))
                 }
+                "#=_global" => {
+                    // args: [var_name, initial_value, type_name]
+                    let var_name = match &args[0] {
+                        Expr::Ident(s) => s,
+                        _ => panic!("let: first arg must be variable name"),
+                    };
+
+                    let llvm_type: BasicTypeEnum = self.llvm_type_from_expr(&args[2]);
+
+                    // If there is an initial value
+                    let init_val_exist = match &args[1] {
+                        Expr::Ident(s) => {
+                            if *s == "_".to_string() {
+                                false
+                            } else {
+                                true
+                            }
+                        }
+                        _ => true,
+                    };
+                    // Check if an initial value is provided; "_" means no initial value
+                    // If no initial value, zero-initialize (works for numeric types and structs)
+                    let init_val = if init_val_exist {
+                        self.compile_expr(&args[1], variables)
+                    } else {
+                        // For structs, initialize with zeroed
+                        Some((
+                            llvm_type.const_zero(),
+                            Expr::Ident("void".to_string()),
+                            None,
+                        ))
+                    };
+                    let gv =
+                        self.module
+                            .add_global(llvm_type, Some(AddressSpace::default()), var_name);
+                    gv.set_initializer(&init_val.clone().unwrap().0);
+                    self.global_variables.insert(
+                        var_name.clone(),
+                        GlobalVar {
+                            ptr: gv,
+                            ty_ast: args[2].clone(),
+                        },
+                    );
+                    None
+                }
+                "load_global" => {
+                    //get pointer and variable type
+                    let alloca = self
+                        .global_variables
+                        .get(name)
+                        .expect(&format!("Undefined _global variable {}", name)); // safe because variable must exist
+                    Some((
+                        self.builder
+                            .build_load(
+                                self.llvm_type_from_expr(&alloca.ty_ast),
+                                alloca.ptr.as_pointer_value(),
+                                name,
+                            )
+                            .unwrap()
+                            .into(),
+                        alloca.ty_ast.clone(),
+                        Some(VariablesPointerAndTypes {
+                            ptr: alloca.ptr.as_pointer_value(),
+                            typeexpr: alloca.ty_ast.clone(),
+                        }),
+                    ))
+                }
+                "=_global" => match &args[1] {
+                    // Array assign is special
+                    Expr::ArrayLiteral(elems) => Some((
+                        self.codegen_array_assign(&args[0], elems, variables)
+                            .unwrap(), // safe unwrap: codegen_array_assign returns Some for valid array literals
+                        Expr::Ident("void".to_string()),
+                        None, // Array assignment does not return a value because the pointer already exists
+                    )),
+                    _ => {
+                        let value = self.compile_expr(&args[1], variables).unwrap();
+                        let alloca = self
+                            .global_variables
+                            .get(name)
+                            .expect(&format!("Undefined _global variable {}", name)).ptr;
+                        self.builder.build_store(alloca.as_pointer_value(), value.0).unwrap();
+                        None
+                    }
+                },
                 //declaring and initializing variables
                 "let" | "#=" => {
                     // args: [var_name, initial_value, type_name]
@@ -1783,6 +1874,11 @@ impl<'ctx> Codegen<'ctx> {
                         _ => None,
                     }
                 }
+                "unsafe_asm" => Some((
+                    self.compile_unsafe_asm(args, variables),
+                    args[0].clone(),
+                    None,
+                )),
                 // Call other functions
                 name => {
                     // Lookup LLVM function by name.
@@ -3190,9 +3286,9 @@ impl<'ctx> Codegen<'ctx> {
                     end_bb = Some(self.context.append_basic_block(current_fn, "if.end"));
                     end_bb_exist = true;
                 }
-                if else_exist{
+                if else_exist {
                     else_bb.unwrap()
-                }else{
+                } else {
                     end_bb.unwrap()
                 }
                 //else_bb.unwrap_or(end_bb.unwrap())
@@ -3250,7 +3346,9 @@ impl<'ctx> Codegen<'ctx> {
                     end_bb = Some(self.context.append_basic_block(current_fn, "if.end"));
                     end_bb_exist = true;
                 }
-                self.builder.build_unconditional_branch(end_bb.unwrap()).unwrap();
+                self.builder
+                    .build_unconditional_branch(end_bb.unwrap())
+                    .unwrap();
             }
             for i in self.scope_owners.show_current() {
                 if let Some(b) = self.current_owners.get(&i.0)
@@ -3270,6 +3368,104 @@ impl<'ctx> Codegen<'ctx> {
             self.builder.position_at_end(end_bb.unwrap());
         }
         end_bb_exist
+    }
+    fn eval_const_string(&self, expr: &Expr) -> String {
+        match expr {
+            Expr::String(s) => s.clone(),
+            _ => panic!("unsafe_asm requires string literal"),
+        }
+    }
+    fn compile_unsafe_asm(
+        &mut self,
+        args: &[Expr],
+        variables: &mut HashMap<String, VariablesPointerAndTypes<'ctx>>,
+    ) -> BasicValueEnum<'ctx> {
+        const IDX_RET: usize = 0;
+        const IDX_ASM: usize = 1;
+        const IDX_CONSTRAINT: usize = 2;
+        const IDX_SIDEEFFECT: usize = 3;
+        const IDX_DIALECT: usize = 4;
+        const IDX_INPUTS: usize = 5;
+        assert!(args.len() >= 5, "unsafe_asm needs >= 5 arguments");
+
+        // ==============================
+        // ① asm template / constraint
+        // ==============================
+        let asm_template = self.eval_const_string(&args[IDX_ASM]);
+        let constraint = self.eval_const_string(&args[IDX_CONSTRAINT]);
+        let sideef = match &args[IDX_SIDEEFFECT] {
+            Expr::Bool(b) => *b,
+            _ => panic!("unsafe_asm side effect requires bool literal"),
+        };
+
+        // ==============================
+        // ② 入力引数
+        // ==============================
+        let mut input_values: Vec<BasicMetadataValueEnum<'_>> = Vec::new();
+        let mut input_types: Vec<BasicMetadataTypeEnum> = Vec::new();
+
+        for expr in &args[IDX_INPUTS..] {
+            let val = self.compile_expr(expr, variables).unwrap().0;
+            input_types.push(val.get_type().into());
+            input_values.push(val.into());
+        }
+
+        // ==============================
+        // ③ 戻り値型
+        // ==============================
+        // unsafe_asm は「期待される型」で決まる
+        let return_type_is_void = matches!(args[IDX_RET], Expr::Ident(ref s) if s == "void");
+
+        let return_type_enum = if return_type_is_void {
+            None
+        } else {
+            Some(self.llvm_type_from_expr(&args[IDX_RET]))
+        };
+        let fn_type = if return_type_is_void {
+            self.context.void_type().fn_type(&input_types, false)
+        } else {
+            return_type_enum.unwrap().fn_type(&input_types, false)
+        };
+        let dialect = match &args[IDX_DIALECT] {
+            Expr::String(s) => match s.as_str() {
+                "intel" => Some(InlineAsmDialect::Intel),
+                "att" => Some(InlineAsmDialect::ATT),
+                _ => None,
+            },
+            _ => panic!("asm dialect must be string literal"),
+        };
+
+        // ==============================
+        // ⑤ InlineAsm 作成
+        // ==============================
+        let inline_asm = self.context.create_inline_asm(
+            fn_type,
+            asm_template,
+            constraint,
+            sideef, // has_side_effects（必須）
+            false,  // is_align_stack
+            dialect,
+            false, // can_throw
+        );
+
+        // ==============================
+        // ⑥ 呼び出し
+        // ==============================
+        let call_site = self
+            .builder
+            .build_indirect_call(fn_type, inline_asm, &input_values, "asmcall")
+            .unwrap();
+
+        // ==============================
+        // ⑦ 戻り値
+        // ==============================
+        match call_site.try_as_basic_value().basic() {
+            Some(v) => v,
+            None => {
+                // void asm
+                self.context.i64_type().const_zero().into()
+            }
+        }
     }
 }
 fn type_match(type1: &Expr, type2: &Expr) -> bool {

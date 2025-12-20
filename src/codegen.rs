@@ -11,6 +11,7 @@ use inkwell::types::BasicTypeEnum;
 use inkwell::types::FloatType;
 use inkwell::types::*;
 use inkwell::values::*;
+use core::panic;
 use std::collections::HashMap;
 
 use crate::parser::*;
@@ -683,16 +684,20 @@ impl<'ctx> Codegen<'ctx> {
                 }
                 "load_global" => {
                     //get pointer and variable type
+                    let varname = match &args[0]{
+                        Expr::Ident(n)=>n.clone(),
+                        _=>panic!("load_global(global variable)")
+                    };
                     let alloca = self
                         .global_variables
-                        .get(name)
-                        .expect(&format!("Undefined _global variable {}", name)); // safe because variable must exist
+                        .get(&varname)
+                        .expect(&format!("Undefined _global variable {}", &varname)); // safe because variable must exist
                     Some((
                         self.builder
                             .build_load(
                                 self.llvm_type_from_expr(&alloca.ty_ast),
                                 alloca.ptr.as_pointer_value(),
-                                name,
+                                &varname,
                             )
                             .unwrap()
                             .into(),

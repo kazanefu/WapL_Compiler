@@ -86,6 +86,7 @@ pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
     has_main: bool,
+    toplevel_counter:usize,
 }
 
 impl Parser {
@@ -94,6 +95,7 @@ impl Parser {
             tokens,
             pos: 0,
             has_main: false,
+            toplevel_counter:0,
         }
     }
 
@@ -194,11 +196,12 @@ impl Parser {
                         Expr::Call { name, args: _ } if name == "main" => {}
                         other => {
                             funcs.push(TopLevel::Function(Function {
-                                name: "toplevel_child".to_string(),
+                                name: format!("toplevel_child.{}",self.toplevel_counter),
                                 return_type: Expr::Ident("void".to_string()),
                                 args: vec![],
                                 body: vec![Stmt { expr: other }],
                             }));
+                            self.toplevel_counter += 1;
                         }
                     }
                 }

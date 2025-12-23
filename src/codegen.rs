@@ -3620,7 +3620,7 @@ fn type_match(type1: &Expr, type2: &Expr) -> bool {
                         .expect(&format!("{}:{:?} has no args", "Error".red(), type2)),
                 )
         }
-        _ => true,
+        _ => false,
     }
 }
 fn float_bit_width(ft: FloatType) -> u32 {

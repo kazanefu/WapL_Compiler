@@ -28,6 +28,8 @@ struct FunctionContext<'ctx> {
     function: FunctionValue<'ctx>,
     labels: HashMap<String, BasicBlock<'ctx>>, //labels(already exist)
     unresolved: HashMap<String, Vec<PendingJump<'ctx>>>, //labels(unresolved)
+    return_ty: Expr,
+    fn_name: String,
 }
 #[derive(Clone)]
 pub struct ScopeOwner {
@@ -215,6 +217,8 @@ impl<'ctx> Codegen<'ctx> {
             function: llvm_func,
             labels: HashMap::new(),
             unresolved: HashMap::new(),
+            return_ty: func.return_type,
+            fn_name: name.clone(),
         });
 
         // --- function body ---
@@ -272,7 +276,7 @@ impl<'ctx> Codegen<'ctx> {
         // --- add function ---
         let llvm_func = self.module.add_function(&func.name, fn_type, None);
         self.function_types
-            .insert(func.name.clone(), (func.return_type, true));
+            .insert(func.name.clone(), (func.return_type.clone(), true));
         let entry = self.context.append_basic_block(llvm_func, "entry");
         self.builder.position_at_end(entry);
 
@@ -325,6 +329,8 @@ impl<'ctx> Codegen<'ctx> {
             function: llvm_func,
             labels: HashMap::new(),
             unresolved: HashMap::new(),
+            return_ty: func.return_type.clone(),
+            fn_name: func.name.clone(),
         });
 
         // --- function body ---
@@ -443,15 +449,51 @@ impl<'ctx> Codegen<'ctx> {
                 }
             },
             Expr::Return(vals) => {
+                if type_match(
+                    &(self
+                        .current_fn
+                        .as_ref()
+                        .expect("return: out of function")
+                        .return_ty
+                        .clone()),
+                    &Expr::Ident("void".to_string()),
+                ) {
+                    self.builder.build_return(None).unwrap();
+                    return false;
+                }
                 if vals.len() != 1 {
                     panic!("Return must have exactly one value");
                 }
                 //compile return value
-                let ret_val = self
+                let (ret_val, ret_ty, _) = self
                     .compile_expr(vals.into_iter().next().unwrap(), variables)
-                    .unwrap()
-                    .0; // unwrap is safe because we already checked vals.len() == 1
+                    .unwrap(); // unwrap is safe because we already checked vals.len() == 1
                 self.builder.build_return(Some(&ret_val)).unwrap();
+                if !type_match(
+                    &ret_ty,
+                    &(self
+                        .current_fn
+                        .as_ref()
+                        .expect("return: out of function")
+                        .return_ty
+                        .clone()),
+                ) {
+                    println!(
+                        "{}:function {} expected {:?} found{:?}",
+                        "Error".red(),
+                        self.current_fn
+                            .as_ref()
+                            .expect("return: out of function")
+                            .fn_name
+                            .clone(),
+                        self.current_fn
+                            .as_ref()
+                            .expect("return: out of function")
+                            .return_ty
+                            .clone(),
+                        ret_ty
+                    )
+                }
                 // check memory leak
                 for i in self.scope_owners.show_current() {
                     // if there are Not released memory , print error message
@@ -459,9 +501,14 @@ impl<'ctx> Codegen<'ctx> {
                         && *b
                     {
                         println!(
-                            "{}:you need to free or drop pointer {}!",
+                            "{}:you need to free or drop pointer {}! at function {}",
                             "Error".red().bold(),
-                            i.0
+                            i.0,
+                            self.current_fn
+                                .as_ref()
+                                .expect("return: out of function")
+                                .fn_name
+                                .clone(),
                         );
                     }
                 }
@@ -557,9 +604,14 @@ impl<'ctx> Codegen<'ctx> {
                             name, args[0]
                         )) {
                             println!(
-                                "{}:\"{}\" already moved. it is prohibited to read moved pointer",
+                                "{}:\"{}\" already moved. it is prohibited to read moved pointer: at function {}",
                                 "Error".red().bold(),
-                                name
+                                name,
+                                self.current_fn
+                                    .as_ref()
+                                    .expect("return: out of function")
+                                    .fn_name
+                                    .clone(),
                             )
                         }
                     }
@@ -796,9 +848,14 @@ impl<'ctx> Codegen<'ctx> {
                             self.scope_owners.set_true(var_name.clone());
                             if !init_val_exist {
                                 println!(
-                                    "{}: {var_name} is Owner (*:{:?}). it must have value",
+                                    "{}: {var_name} is Owner (*:{:?}). it must have value: at function {}",
                                     "Error".red().bold(),
-                                    args
+                                    args,
+                                    self.current_fn
+                                        .as_ref()
+                                        .expect("return: out of function")
+                                        .fn_name
+                                        .clone(),
                                 )
                             }
                         }
@@ -807,10 +864,15 @@ impl<'ctx> Codegen<'ctx> {
                             if init_val_exist && !type_match(&args[2], &init_val.clone().unwrap().1)
                             {
                                 println!(
-                                    "{}: {var_name} Type miss match : expected {:?} found {:?}",
+                                    "{}: {var_name} Type miss match : expected {:?} found {:?}: at function {}",
                                     "Error".red().bold(),
                                     &args[2],
-                                    &init_val.clone().unwrap().1
+                                    &init_val.clone().unwrap().1,
+                                    self.current_fn
+                                        .as_ref()
+                                        .expect("return: out of function")
+                                        .fn_name
+                                        .clone(),
                                 )
                             }
                         }
@@ -839,10 +901,15 @@ impl<'ctx> Codegen<'ctx> {
                             && base == "&"
                         {
                             println!(
-                                "{} :{} :{:?} is immutable borrow! if you want to reassign, use &mut:T",
+                                "{} :{} :{:?} is immutable borrow! if you want to reassign, use &mut:T : at function {}",
                                 "Error".red().bold(),
                                 s,
-                                &val.typeexpr
+                                &val.typeexpr,
+                                self.current_fn
+                                    .as_ref()
+                                    .expect("return: out of function")
+                                    .fn_name
+                                    .clone(),
                             );
                         }
                         self.builder.build_store(alloca, value.0).unwrap();
@@ -1551,9 +1618,14 @@ impl<'ctx> Codegen<'ctx> {
                                 if let Some(owned) = self.current_owners.get_mut(var_name) {
                                     if !*owned {
                                         println!(
-                                            "{} : at pmove \"{}\" already moved",
+                                            "{} : at pmove \"{}\" already moved : at function {}",
                                             "Error".red().bold(),
-                                            var_name
+                                            var_name,
+                                            self.current_fn
+                                                .as_ref()
+                                                .expect("return: out of function")
+                                                .fn_name
+                                                .clone(),
                                         );
                                     }
                                     *owned = false;
@@ -1567,16 +1639,26 @@ impl<'ctx> Codegen<'ctx> {
                         }
                         Expr::TypeApply { base, args: _args } if base == "&" || base == "&mut" => {
                             println!(
-                                "{} pmove expect *:T variables found {:?}",
+                                "{} pmove expect *:T variables found {:?} : at function {}",
                                 "Error".red().bold(),
-                                &ty
+                                &ty,
+                                self.current_fn
+                                    .as_ref()
+                                    .expect("return: out of function")
+                                    .fn_name
+                                    .clone(),
                             );
                         }
                         _ => {
                             println!(
-                                "{} pmove expect *:T variables found {:?}",
+                                "{} pmove expect *:T variables found {:?} : at function {}",
                                 "Error".red().bold(),
-                                &args[0]
+                                &args[0],
+                                self.current_fn
+                                    .as_ref()
+                                    .expect("return: out of function")
+                                    .fn_name
+                                    .clone(),
                             );
                         }
                     }
@@ -1600,10 +1682,15 @@ impl<'ctx> Codegen<'ctx> {
                     match &ty {
                         Expr::TypeApply { base, args: _args } if base == "&" => {
                             println!(
-                                "{}: p&mut expect &mut:T or *:T found {:?} {:?}",
+                                "{}: p&mut expect &mut:T or *:T found {:?} {:?} : at function {}",
                                 "Error".red().bold(),
                                 ty,
-                                &args[0]
+                                &args[0],
+                                self.current_fn
+                                    .as_ref()
+                                    .expect("return: out of function")
+                                    .fn_name
+                                    .clone(),
                             )
                         }
                         _ => {}
@@ -2150,7 +2237,15 @@ impl<'ctx> Codegen<'ctx> {
                 }
                 _ => panic!("Unknown type constructor: {}", base),
             },
-            _ => panic!("Expected identifier type {:?}", expr),
+            _ => panic!(
+                "Expected identifier type {:?} : at function {}",
+                expr,
+                self.current_fn
+                    .as_ref()
+                    .expect("return: out of function")
+                    .fn_name
+                    .clone(),
+            ),
         }
     }
     pub fn build_format_from_ptr(
@@ -3176,9 +3271,14 @@ impl<'ctx> Codegen<'ctx> {
                 && *b
             {
                 println!(
-                    "{}:you need to free or drop pointer {}!",
+                    "{}:you need to free or drop pointer {}!: at function {}",
                     "Error".red().bold(),
-                    i.0
+                    i.0,
+                    self.current_fn
+                        .as_ref()
+                        .expect("return: out of function")
+                        .fn_name
+                        .clone(),
                 );
             }
         }
@@ -3339,9 +3439,14 @@ impl<'ctx> Codegen<'ctx> {
                     && *b
                 {
                     println!(
-                        "{}:you need to free or drop pointer {}!",
+                        "{}:you need to free or drop pointer {}! : at function {}",
                         "Error".red().bold(),
-                        i.0
+                        i.0,
+                        self.current_fn
+                            .as_ref()
+                            .expect("return: out of function")
+                            .fn_name
+                            .clone(),
                     );
                 }
             }
@@ -3374,9 +3479,14 @@ impl<'ctx> Codegen<'ctx> {
                     && *b
                 {
                     println!(
-                        "{}:you need to free or drop pointer {}!",
+                        "{}:you need to free or drop pointer {}! : at function {}",
                         "Error".red().bold(),
-                        i.0
+                        i.0,
+                        self.current_fn
+                            .as_ref()
+                            .expect("return: out of function")
+                            .fn_name
+                            .clone(),
                     );
                 }
             }
@@ -3504,8 +3614,10 @@ fn type_match(type1: &Expr, type2: &Expr) -> bool {
         ) => {
             (base1.as_str() == base2.as_str() || base1.as_str() == "ptr" || base2.as_str() == "ptr")
                 && type_match(
-                    arg1.get(0).expect(&format!("{}:{:?} has no args","Error".red(), type1)),
-                    arg2.get(0).expect(&format!("{}:{:?} has no args","Error".red(), type2)),
+                    arg1.get(0)
+                        .expect(&format!("{}:{:?} has no args", "Error".red(), type1)),
+                    arg2.get(0)
+                        .expect(&format!("{}:{:?} has no args", "Error".red(), type2)),
                 )
         }
         _ => true,

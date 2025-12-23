@@ -1,4 +1,5 @@
 use colored::*;
+use core::panic;
 use inkwell::AddressSpace;
 use inkwell::FloatPredicate;
 use inkwell::InlineAsmDialect;
@@ -11,7 +12,6 @@ use inkwell::types::BasicTypeEnum;
 use inkwell::types::FloatType;
 use inkwell::types::*;
 use inkwell::values::*;
-use core::panic;
 use std::collections::HashMap;
 
 use crate::parser::*;
@@ -635,7 +635,14 @@ impl<'ctx> Codegen<'ctx> {
                         .builder
                         .build_load(self.llvm_type_from_expr(load_type), ptr, "deref")
                         .unwrap();
-                    Some((loaded.as_basic_value_enum(), load_type.clone(), None))
+                    Some((
+                        loaded.as_basic_value_enum(),
+                        load_type.clone(),
+                        Some(VariablesPointerAndTypes {
+                            ptr,
+                            typeexpr: load_type.clone(),
+                        }),
+                    ))
                 }
                 "#=_global" => {
                     // args: [var_name, initial_value, type_name]
@@ -684,9 +691,9 @@ impl<'ctx> Codegen<'ctx> {
                 }
                 "load_global" => {
                     //get pointer and variable type
-                    let varname = match &args[0]{
-                        Expr::Ident(n)=>n.clone(),
-                        _=>panic!("load_global(global variable)")
+                    let varname = match &args[0] {
+                        Expr::Ident(n) => n.clone(),
+                        _ => panic!("load_global(global variable)"),
                     };
                     let alloca = self
                         .global_variables
@@ -717,12 +724,19 @@ impl<'ctx> Codegen<'ctx> {
                         None, // Array assignment does not return a value because the pointer already exists
                     )),
                     _ => {
+                        let varname = match &args[0] {
+                            Expr::Ident(n) => n.clone(),
+                            _ => panic!("load_global(global variable)"),
+                        };
                         let value = self.compile_expr(&args[1], variables).unwrap();
                         let alloca = self
                             .global_variables
-                            .get(name)
-                            .expect(&format!("Undefined _global variable {}", name)).ptr;
-                        self.builder.build_store(alloca.as_pointer_value(), value.0).unwrap();
+                            .get(&varname)
+                            .expect(&format!("Undefined _global variable {}", &varname))
+                            .ptr;
+                        self.builder
+                            .build_store(alloca.as_pointer_value(), value.0)
+                            .unwrap();
                         None
                     }
                 },
@@ -2595,8 +2609,8 @@ impl<'ctx> Codegen<'ctx> {
                 from: current_block,
             });
 
-        // ⚠ 重要：ダミーブロックを作らず、builder を動かさない
-        // → 次の point が builder の位置をセットする
+        // ダミーブロックを作らず、builder を動かさない
+        // 次の point が builder の位置をセットする
     }
 
     pub fn gen_warptoif(
@@ -3394,7 +3408,7 @@ impl<'ctx> Codegen<'ctx> {
         assert!(args.len() >= 5, "unsafe_asm needs >= 5 arguments");
 
         // ==============================
-        // ① asm template / constraint
+        // asm template / constraint
         // ==============================
         let asm_template = self.eval_const_string(&args[IDX_ASM]);
         let constraint = self.eval_const_string(&args[IDX_CONSTRAINT]);
@@ -3404,7 +3418,7 @@ impl<'ctx> Codegen<'ctx> {
         };
 
         // ==============================
-        // ② 入力引数
+        // 入力引数
         // ==============================
         let mut input_values: Vec<BasicMetadataValueEnum<'_>> = Vec::new();
         let mut input_types: Vec<BasicMetadataTypeEnum> = Vec::new();
@@ -3416,7 +3430,7 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         // ==============================
-        // ③ 戻り値型
+        // 戻り値型
         // ==============================
         // unsafe_asm は「期待される型」で決まる
         let return_type_is_void = matches!(args[IDX_RET], Expr::Ident(ref s) if s == "void");
@@ -3441,20 +3455,20 @@ impl<'ctx> Codegen<'ctx> {
         };
 
         // ==============================
-        // ⑤ InlineAsm 作成
+        // InlineAsm 作成
         // ==============================
         let inline_asm = self.context.create_inline_asm(
             fn_type,
             asm_template,
             constraint,
-            sideef, // has_side_effects（必須）
+            sideef, // has_side_effects
             false,  // is_align_stack
             dialect,
             false, // can_throw
         );
 
         // ==============================
-        // ⑥ 呼び出し
+        // 呼び出し
         // ==============================
         let call_site = self
             .builder
@@ -3462,7 +3476,7 @@ impl<'ctx> Codegen<'ctx> {
             .unwrap();
 
         // ==============================
-        // ⑦ 戻り値
+        // 戻り値
         // ==============================
         match call_site.try_as_basic_value().basic() {
             Some(v) => v,
@@ -3475,7 +3489,25 @@ impl<'ctx> Codegen<'ctx> {
 }
 fn type_match(type1: &Expr, type2: &Expr) -> bool {
     match (type1, type2) {
-        (Expr::Ident(ty1), Expr::Ident(ty2)) => ty1.as_str() == ty2.as_str(),
+        (Expr::Ident(ty1), Expr::Ident(ty2)) => {
+            ty1.as_str() == ty2.as_str() || ty1.as_str() == "T" || ty2.as_str() == "T"
+        }
+        (
+            Expr::TypeApply {
+                base: base1,
+                args: arg1,
+            },
+            Expr::TypeApply {
+                base: base2,
+                args: arg2,
+            },
+        ) => {
+            (base1.as_str() == base2.as_str() || base1.as_str() == "ptr" || base2.as_str() == "ptr")
+                && type_match(
+                    arg1.get(0).expect(&format!("{}:{:?} has no args","Error".red(), type1)),
+                    arg2.get(0).expect(&format!("{}:{:?} has no args","Error".red(), type2)),
+                )
+        }
         _ => true,
     }
 }

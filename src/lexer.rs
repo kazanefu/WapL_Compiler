@@ -124,6 +124,8 @@ impl Tokenizer {
                 s.push('\t');
             } else if self.match_next('"') {
                 s.push('"');
+            } else if self.match_next('\'') {
+                s.push('\'');
             } else if self.match_next('x') {
                 let h1 = self.next_char().unwrap();
                 let h2 = self.next_char().unwrap();
@@ -180,11 +182,11 @@ impl Tokenizer {
             let mut is_float = false;
             let mut is_short = false;
             while let Some(c) = self.peek() {
-                if c.is_ascii_digit() || c == '.' ||c=='s'{
+                if c.is_ascii_digit() || c == '.' || c == 's' {
                     if c == '.' {
                         is_float = true;
                     }
-                    if c == 's'{
+                    if c == 's' {
                         is_short = true;
                         self.pos += 1;
                         break;
@@ -197,9 +199,17 @@ impl Tokenizer {
             }
             if s != "-" {
                 if is_float {
-                    return if !is_short{Token::FloatNumber(s.parse::<f64>().unwrap())}else{Token::FloatshortNumber(s.parse::<f32>().unwrap())};
+                    return if !is_short {
+                        Token::FloatNumber(s.parse::<f64>().unwrap())
+                    } else {
+                        Token::FloatshortNumber(s.parse::<f32>().unwrap())
+                    };
                 } else {
-                    return if !is_short{Token::IntNumber(s.parse::<i64>().unwrap())}else{Token::IntshortNumber(s.parse::<i32>().unwrap())};
+                    return if !is_short {
+                        Token::IntNumber(s.parse::<i64>().unwrap())
+                    } else {
+                        Token::IntshortNumber(s.parse::<i32>().unwrap())
+                    };
                 }
             }
         }
@@ -246,9 +256,9 @@ impl Tokenizer {
                 "import" | "use" => Token::Import,
                 "loopif" => Token::LoopIf,
                 "declare" => Token::Declare,
-                "if"=>Token::If,
-                "elif"=>Token::ElIf,
-                "else"=>Token::Else,
+                "if" => Token::If,
+                "elif" => Token::ElIf,
+                "else" => Token::Else,
                 _ => Token::Ident(s),
             };
         }

@@ -474,6 +474,9 @@ impl Parser {
             Some(Token::Colon) => {}
             _ => {
                 self.no_return_back();
+                if name.as_str() == "str"{
+                    return Expr::TypeApply { base: "ptr".to_string(), args: vec![Expr::Ident("char".to_string())] }
+                }
                 return Expr::Ident(name.clone());
             } //normal types
         }

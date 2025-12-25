@@ -636,13 +636,8 @@ impl<'ctx> Codegen<'ctx> {
                         Expr::Ident(s) => s,
                         _ => {
                             //unwrap because "ptr" or "&_" require an expression with a pointer
-                            let (_exp, ty, p) = self.compile_expr(&args[0], variables).unwrap();
-                            let ptr = p
-                                .expect(&format!(
-                                    "ptr() and &_ require an expression with a pointer"
-                                ))
-                                .ptr
-                                .as_basic_value_enum();
+                            let (exp, ty, p) = self.compile_expr(&args[0], variables).unwrap();
+                            let ptr = self.ensure_lvalue(exp, &ty, p).as_basic_value_enum();
                             return Some((
                                 ptr.clone(),
                                 Expr::TypeApply {
@@ -750,9 +745,7 @@ impl<'ctx> Codegen<'ctx> {
 
                     let llvm_type: BasicTypeEnum = self.llvm_type_from_expr(&args[1]);
 
-                    let gv =
-                        self.module
-                            .add_global(llvm_type, None, var_name);
+                    let gv = self.module.add_global(llvm_type, None, var_name);
                     gv.set_externally_initialized(true);
                     gv.set_linkage(inkwell::module::Linkage::External);
                     self.global_variables.insert(
@@ -1315,6 +1308,14 @@ impl<'ctx> Codegen<'ctx> {
                         )),
                         _ => None,
                     }
+                }
+                "as" => {
+                    let value = self.compile_expr(&args[0], variables).expect("fail to compile_expr at \"as\"");
+                    Some((
+                        self.build_cast(value.0, &args[1], &value.1),
+                        args[1].clone(),
+                        None
+                    ))
                 }
                 // Deprecated names for backward compatibility
                 // They behave the same as "as_i64" | "as_f64"
@@ -1919,7 +1920,8 @@ impl<'ctx> Codegen<'ctx> {
                 // struct value -> member value
                 "." => {
                     let value_struct = self.compile_expr(&args[0], variables).unwrap();
-                    let alloca = value_struct.2.unwrap().ptr;
+                    let alloca =
+                        self.ensure_lvalue(value_struct.0, &value_struct.1, value_struct.2); //(value_struct.2.unwrap().ptr) or (temp_value alloc)
                     let (memberptr, membertype) = self.compile_member_access(
                         alloca.as_basic_value_enum(),
                         &args[1],
@@ -2589,6 +2591,48 @@ impl<'ctx> Codegen<'ctx> {
                     .into_float_value()
                     .as_basic_value_enum()
             }
+        }
+    }
+
+    fn build_cast(
+        &self,
+        value: BasicValueEnum<'ctx>,
+        to_ty: &Expr,
+        from_ty: &Expr,
+    ) -> BasicValueEnum<'ctx> {
+        let to_ty_llvm = self.llvm_type_from_expr(to_ty);
+        let from_ty_llvm = self.llvm_type_from_expr(from_ty);
+        match (to_ty_llvm, from_ty_llvm) {
+            // int to int
+            (BasicTypeEnum::IntType(to), BasicTypeEnum::IntType(from)) => {
+                let v = value.into_int_value();
+                if from.get_bit_width() < to.get_bit_width() {
+                    self.builder
+                        .build_int_s_extend(v, to, "sext")
+                        .unwrap()
+                        .into()
+                } else if from.get_bit_width() > to.get_bit_width() {
+                    self.builder
+                        .build_int_truncate(v, to, "trunc")
+                        .unwrap()
+                        .into()
+                } else {
+                    v.into()
+                }
+            }
+            // int to float
+            (BasicTypeEnum::FloatType(to), BasicTypeEnum::IntType(_)) => self
+                .builder
+                .build_signed_int_to_float(value.into_int_value(), to, "sitofp")
+                .unwrap()
+                .into(),
+            // float to int
+            (BasicTypeEnum::IntType(to), BasicTypeEnum::FloatType(_)) => self
+                .builder
+                .build_float_to_signed_int(value.into_float_value(), to, "sitofp")
+                .unwrap()
+                .into(),
+            _ => panic!("unsupported cast type"),
         }
     }
 
@@ -3617,6 +3661,25 @@ impl<'ctx> Codegen<'ctx> {
                 // void asm
                 self.context.i64_type().const_zero().into()
             }
+        }
+    }
+    fn ensure_lvalue(
+        &self,
+        value: BasicValueEnum<'ctx>,
+        ty: &Expr,
+        opt: Option<VariablesPointerAndTypes<'ctx>>,
+    ) -> PointerValue<'ctx> {
+        if let Some(v) = opt {
+            v.ptr
+        } else {
+            let temp = self
+                .builder
+                .build_alloca(self.llvm_type_from_expr(ty), "temp")
+                .expect("fail to alloc temp_value");
+            self.builder
+                .build_store(temp, value)
+                .expect("fail to store temp_value");
+            temp
         }
     }
 }

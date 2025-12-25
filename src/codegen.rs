@@ -741,6 +741,29 @@ impl<'ctx> Codegen<'ctx> {
                     );
                     None
                 }
+                "#=_extern_global" => {
+                    // args: [var_name,type_name]
+                    let var_name = match &args[0] {
+                        Expr::Ident(s) => s,
+                        _ => panic!("extern_global: first arg must be variable name"),
+                    };
+
+                    let llvm_type: BasicTypeEnum = self.llvm_type_from_expr(&args[1]);
+
+                    let gv =
+                        self.module
+                            .add_global(llvm_type, None, var_name);
+                    gv.set_externally_initialized(true);
+                    gv.set_linkage(inkwell::module::Linkage::External);
+                    self.global_variables.insert(
+                        var_name.clone(),
+                        GlobalVar {
+                            ptr: gv,
+                            ty_ast: args[1].clone(),
+                        },
+                    );
+                    None
+                }
                 "load_global" => {
                     //get pointer and variable type
                     let varname = match &args[0] {

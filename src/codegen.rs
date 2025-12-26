@@ -559,6 +559,11 @@ impl<'ctx> Codegen<'ctx> {
                 Expr::Ident("i32".to_string()),
                 None,
             )),
+            Expr::IsizeNumber(n) => Some((
+                self.llvm_type_from_expr(&Expr::Ident("isize".to_string())).into_int_type().const_int(*n as u64, false).into(),
+                Expr::Ident("isize".to_string()),
+                None,
+            )),
             Expr::FloatSNumber(n) => Some((
                 self.context.f32_type().const_float((*n).into()).into(),
                 Expr::Ident("f32".to_string()),

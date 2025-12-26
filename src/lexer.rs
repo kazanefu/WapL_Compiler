@@ -1,6 +1,7 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Ident(String),
+    IsizeNumber(isize),
     IntNumber(i64),
     FloatNumber(f64),
     IntshortNumber(i32),
@@ -181,10 +182,18 @@ impl Tokenizer {
             let mut s = ch.to_string();
             let mut is_float = false;
             let mut is_short = false;
+            let mut is_isize = false;
             while let Some(c) = self.peek() {
-                if c.is_ascii_digit() || c == '.' || c == 's' {
+                if c.is_ascii_digit() || c == '.' || c == 's'||c == '_' {
                     if c == '.' {
                         is_float = true;
+                    }
+                    if c == '_' {
+                        is_short = false;
+                        is_float = false;
+                        is_isize = true;
+                        self.pos += 1;
+                        break;
                     }
                     if c == 's' {
                         is_short = true;
@@ -198,6 +207,9 @@ impl Tokenizer {
                 }
             }
             if s != "-" {
+                if is_isize{
+                    return Token::IsizeNumber(s.parse::<isize>().unwrap())
+                }
                 if is_float {
                     return if !is_short {
                         Token::FloatNumber(s.parse::<f64>().unwrap())

@@ -3,6 +3,7 @@ use std::fs;
 
 #[derive(Debug, Clone)]
 pub enum Expr {
+    IsizeNumber(isize),      //isize
     IntNumber(i64),          //i64
     FloatNumber(f64),        //f64
     IntSNumber(i32),         //i32
@@ -437,6 +438,7 @@ impl Parser {
         let token = self.peek_back();
         match token {
             Some(Token::IntNumber(n)) => Expr::IntNumber(*n),
+            Some(Token::IsizeNumber(n)) => Expr::IsizeNumber(*n),
             Some(Token::FloatNumber(n)) => Expr::FloatNumber(*n),
             Some(Token::IntshortNumber(n)) => Expr::IntSNumber(*n),
             Some(Token::FloatshortNumber(n)) => Expr::FloatSNumber(*n),

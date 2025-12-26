@@ -303,8 +303,9 @@ EOFTOML
     SYSROOT=$(read_toml wasm sysroot "$TOML")
     BITSIZE=$(read_toml wasm bitsize "$TOML")
     WASMTOWAT=$(read_toml wasm wasm2wat "$TOML")
+    WAT=$(read_toml wasm wat "$TOML")
     mkdir -p "./target"
-    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG" --wasm --bitsize "$BITSIZE" --wasm2wat "$WASMTOWAT"
+    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG" --wasm --bitsize "$BITSIZE" --wasm2wat "$WASMTOWAT" --wat "$WAT"
     echo "WASM Build complete: $OUT"
     ;;
 

@@ -86,10 +86,11 @@ pub struct Codegen<'ctx> {
     pub current_owners: HashMap<String, bool>,
     pub scope_owners: ScopeOwner,
     global_variables: HashMap<String, GlobalVar<'ctx>>,
+    pub bitsize: String,
 }
 
 impl<'ctx> Codegen<'ctx> {
-    pub fn new(context: &'ctx Context, name: &str) -> Self {
+    pub fn new(context: &'ctx Context, name: &str,bitsize: String) -> Self {
         let module = context.create_module(name);
         let builder = context.create_builder();
 
@@ -105,6 +106,7 @@ impl<'ctx> Codegen<'ctx> {
             current_owners: HashMap::new(),
             scope_owners: ScopeOwner::new(),
             global_variables: HashMap::new(),
+            bitsize
         };
         this.init_external_functions(); // declare C functions  
         this
@@ -2236,6 +2238,7 @@ impl<'ctx> Codegen<'ctx> {
                     st.as_basic_type_enum()
                 } else {
                     match name.as_str() {
+                        "isize" => if self.bitsize.as_str() == "32"{self.context.i32_type().into()}else{self.context.i64_type().into()},
                         "i32" => self.context.i32_type().into(),
                         "i64" => self.context.i64_type().into(),
                         "f32" => self.context.f32_type().into(),
@@ -3149,7 +3152,7 @@ impl<'ctx> Codegen<'ctx> {
         // strtol(i8*, i8**, i32)
         self.module.add_function(
             "strtol",
-            context.i64_type().fn_type(
+            self.llvm_type_from_expr(&Expr::Ident("isize".to_string())).fn_type(
                 &[
                     context.ptr_type(Default::default()).into(),
                     context.ptr_type(Default::default()).into(),
@@ -3193,13 +3196,13 @@ impl<'ctx> Codegen<'ctx> {
 
         //realloc(size,type)
         let i8_ptr_type = context.ptr_type(AddressSpace::default());
-        let i64_type = context.i64_type();
+        let i64_type = self.llvm_type_from_expr(&Expr::Ident("isize".to_string()));
         let realloc_type = i8_ptr_type.fn_type(&[i8_ptr_type.into(), i64_type.into()], false);
         let _realloc_fn = self.module.add_function("realloc", realloc_type, None);
 
         //malloc(size,type)
         let i8_ptr_type = context.ptr_type(AddressSpace::default());
-        let i64_type = context.i64_type();
+        let i64_type = self.llvm_type_from_expr(&Expr::Ident("isize".to_string()));
         let malloc_type = i8_ptr_type.fn_type(&[i64_type.into()], false);
         let _malloc_fn = self.module.add_function("malloc", malloc_type, None);
 

@@ -36,6 +36,29 @@ struct Args {
     /// 実行ファイルなし
     #[arg(long)]
     ir: bool,
+
+    /// bit数(isizeのサイズ)
+    #[arg(long, default_value = "64")]
+    bitsize: String,
+
+    /// WASM build
+    #[arg(long)]
+    wasm: bool,
+
+    /// sysroot
+    #[arg(
+        long,
+        default_value = "$HOME/wasi-sdk-27.0-x86_64-linux/share/wasi-sysroot"
+    )]
+    sysroot: String,
+
+    /// wasm2wat のパス (環境PATHに通ってる場合は不要)
+    #[arg(long, default_value = "wasm2wat")]
+    wasm2wat: String,
+
+    /// output wat
+    #[arg(long, default_value = "a.wat")]
+    wat: String,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -73,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         //IR作成
         let context = Context::create();
-        let mut codegen = Codegen::new(&context, "wapl_module");
+        let mut codegen = Codegen::new(&context, "wapl_module", args.bitsize.clone());
         codegen.compile_program(parsed);
 
         // 出力.ll名
@@ -100,6 +123,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             println!("Build success! → {}", args.output);
+        }
+        if args.wasm {
+            // ① clang
+            let status = Command::new(&args.clang)
+                .args([
+                    "--target=wasm32-wasi",
+                    &format!("--sysroot={}", args.sysroot),
+                    &format!("-{}", args.opt_level),
+                    &ll_filename,
+                    "-o",
+                    &args.output,
+                ])
+                .status()?;
+
+            if !status.success() {
+                return Err("wasm clang failed to compile".into());
+            }
+
+            // ② wasm2wat
+            let status = Command::new(&args.wasm2wat)
+                .args([&args.output, "-o", &args.wat])
+                .status()?;
+
+            if !status.success() {
+                return Err("wasm2wat failed".into());
+            }
+
+            println!("WASM Build success!");
+            println!("  wasm → {}", args.output);
+            println!("  wat  → {}", args.wat);
         }
 
         Ok(())

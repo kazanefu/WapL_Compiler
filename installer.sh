@@ -258,6 +258,17 @@ input = "src/main.wapl"
 output = "target/$NAME"
 opt = "O3"
 clang = "clang"
+
+[wasm]
+input = "src/main.wapl"
+output = "target/${NAME}.wasm"
+opt = "O3"
+clang = "$HOME/wasi-sdk-27.0-x86_64-linux/bin/clang"
+bitsize = "32"
+sysroot = "$HOME/wasi-sdk-27.0-x86_64-linux/share/wasi-sysroot"
+wasm2wat = "wasm2wat"
+wat = "src/${NAME}.wat"
+
 EOFTOML
     ;;
 
@@ -281,6 +292,20 @@ EOFTOML
     mkdir -p "./target"
     "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG"
     echo "Build complete: $OUT"
+    ;;
+
+  wasm)
+    TOML="wapl.toml"
+    SRC=$(read_toml wasm input "$TOML")
+    OUT=$(read_toml wasm output "$TOML")
+    OPT=$(read_toml wasm opt "$TOML")
+    CLANG=$(read_toml wasm clang "$TOML")
+    SYSROOT=$(read_toml wasm sysroot "$TOML")
+    BITSIZE=$(read_toml wasm bitsize "$TOML")
+    WASMTOWAT=$(read_toml wasm wasm2wat "$TOML")
+    mkdir -p "./target"
+    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG" --wasm --bitsize "$BITSIZE" --wasm2wat "$WASMTOWAT"
+    echo "WASM Build complete: $OUT"
     ;;
 
   run)

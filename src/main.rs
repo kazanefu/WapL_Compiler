@@ -9,6 +9,7 @@ use lexer::*;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use std::env;
 
 /// WapLコンパイラ(llvm irを作ってそれをclangで実行ファイルにする)
 #[derive(clap::Parser, Debug)]
@@ -48,7 +49,7 @@ struct Args {
     /// sysroot
     #[arg(
         long,
-        default_value = "$HOME/wasi-sdk-27.0-x86_64-linux/share/wasi-sysroot"
+        default_value = "$HOME/wasi-sdk-29.0-x86_64-linux/share/wasi-sysroot"
     )]
     sysroot: String,
 
@@ -109,7 +110,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err(format!("LLVM IR file not found: {}", ll_filename).into());
         }
         if !args.ir {
-            let status = Command::new(&args.clang)
+            let clang_path = args.clang.replace("$HOME", &env::var("HOME")?);
+            let status = Command::new(&clang_path)
                 .args([
                     &ll_filename,
                     "-o",
@@ -125,11 +127,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Build success! → {}", args.output);
         }
         if args.wasm {
+            let sysroot_path = args.sysroot.replace("$HOME", &env::var("HOME")?);
+            let clang_path = args.clang.replace("$HOME", &env::var("HOME")?);
             // ① clang
-            let status = Command::new(&args.clang)
+            let status = Command::new(&clang_path)
                 .args([
                     "--target=wasm32-wasi",
-                    &format!("--sysroot={}", args.sysroot),
+                    &format!("--sysroot={}", sysroot_path),
                     &format!("-{}", args.opt_level),
                     &ll_filename,
                     "-o",
@@ -141,8 +145,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 return Err("wasm clang failed to compile".into());
             }
 
+            let wasm2wat_path = args.wasm2wat.replace("$HOME", &env::var("HOME")?);
+
             // ② wasm2wat
-            let status = Command::new(&args.wasm2wat)
+            let status = Command::new(&wasm2wat_path)
                 .args([&args.output, "-o", &args.wat])
                 .status()?;
 

@@ -1893,7 +1893,7 @@ impl<'ctx> Codegen<'ctx> {
                 //return type size in byte as i64
                 "sizeof" => Some((
                     self.compile_sizeof(&args[0]),
-                    Expr::Ident("i64".to_string()),
+                    Expr::Ident("isize".to_string()),
                     None,
                 )),
                 // === struct member access ===

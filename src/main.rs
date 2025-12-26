@@ -83,8 +83,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         //構文解析
         let mut import_map: Vec<String> = Vec::new();
-        let mut parser = parser::Parser::new(tokens);
-        let parsed = parser.parse_program(&mut import_map);
+        let mut parser = parser::Parser::new(tokens,0);
+        let (parsed,_) = parser.parse_program(&mut import_map);
         //デバッグ用にAST出力
         if args.debug {
             println!("AST");

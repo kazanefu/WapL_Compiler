@@ -90,12 +90,12 @@ pub struct Parser {
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self {
+    pub fn new(tokens: Vec<Token>,toplevel_counter:usize) -> Self {
         Self {
             tokens,
             pos: 0,
             has_main: false,
-            toplevel_counter:0,
+            toplevel_counter,
         }
     }
 
@@ -150,6 +150,7 @@ impl Parser {
 
     fn connect_use(&mut self, import_map: &mut Vec<String>, funcs: &mut Vec<TopLevel>) {
         self.no_return_next();
+        let mut top_count = self.toplevel_counter;
         let Token::StringLiteral(path) = self.next().unwrap_or(&Token::EOF) else {
             return;
         };
@@ -159,17 +160,21 @@ impl Parser {
         }
         let mut tokenizer = Tokenizer::new(source.as_str());
         let tokens = tokenizer.tokenize();
-        let mut parser = Parser::new(tokens);
-        let parsed = parser.parse_program(import_map);
+        
+        let mut parser = Parser::new(tokens,top_count);
+        let (parsed,temp_top_count) = parser.parse_program(import_map);
+        top_count = temp_top_count;
         for module_ast in parsed.functions {
             funcs.push(module_ast);
         }
+        
         import_map.push(path.to_string());
+        self.toplevel_counter = top_count;
     }
     // -------------------------
     // Parse entire program
     // -------------------------
-    pub fn parse_program(&mut self, import_map: &mut Vec<String>) -> Program {
+    pub fn parse_program(&mut self, import_map: &mut Vec<String>) -> (Program,usize) {
         let mut funcs = Vec::new();
 
         while let Some(tok) = self.peek() {
@@ -208,10 +213,10 @@ impl Parser {
             }
         }
 
-        Program {
+        (Program {
             functions: funcs,
             has_main: self.has_main,
-        }
+        },self.toplevel_counter)
     }
 
     // -------------------------

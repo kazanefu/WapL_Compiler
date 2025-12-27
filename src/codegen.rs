@@ -5,6 +5,7 @@ use inkwell::FloatPredicate;
 use inkwell::InlineAsmDialect;
 use inkwell::IntPredicate;
 use inkwell::OptimizationLevel;
+use inkwell::attributes::AttributeLoc;
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -99,7 +100,13 @@ pub struct Codegen<'ctx> {
 }
 
 impl<'ctx> Codegen<'ctx> {
-    pub fn new(context: &'ctx Context, name: &str, bitsize: String, wasm: bool,browser:bool) -> Self {
+    pub fn new(
+        context: &'ctx Context,
+        name: &str,
+        bitsize: String,
+        wasm: bool,
+        browser: bool,
+    ) -> Self {
         Target::initialize_all(&InitializationConfig::default());
         let module = context.create_module(name);
         let builder = context.create_builder();
@@ -118,18 +125,18 @@ impl<'ctx> Codegen<'ctx> {
             global_variables: HashMap::new(),
             bitsize: bitsize.clone(),
         };
-        if bitsize.as_str() == "32" && wasm&&!browser {
+        if bitsize.as_str() == "32" && wasm && !browser {
             this.module.set_triple(&TargetTriple::create("wasm32-wasi"));
             this.module.set_data_layout(
                 &TargetData::create("e-m:e-p:32:32-i64:64-n32:64-S128").get_data_layout(),
             );
-        }else if  bitsize.as_str() == "32" && wasm&&browser{
-            this.module.set_triple(&TargetTriple::create("wasm32-unknown-unknown"));
+        } else if bitsize.as_str() == "32" && wasm && browser {
+            this.module
+                .set_triple(&TargetTriple::create("wasm32-unknown-unknown"));
             this.module.set_data_layout(
                 &TargetData::create("e-m:e-p:32:32-i64:64-n32:64-S128").get_data_layout(),
-            );            
-        }
-        else {
+            );
+        } else {
             // ネイティブ（例: x86_64-linux-gnu）
             let triple = TargetMachine::get_default_triple();
             let target = Target::from_triple(&triple).unwrap();
@@ -149,10 +156,10 @@ impl<'ctx> Codegen<'ctx> {
             this.module
                 .set_data_layout(&tm.get_target_data().get_data_layout());
         }
-        if !browser{
+        if !browser {
             this.init_external_functions(); // declare C functions  
         }
-        
+
         this
     }
 
@@ -192,6 +199,11 @@ impl<'ctx> Codegen<'ctx> {
             .get_function(&name)
             .expect(&format!("export:Function {} not found", name));
         func.set_linkage(Linkage::External);
+        let attr = self
+            .context
+            .create_string_attribute("wasm-export-name", &name);
+
+        func.add_attribute(AttributeLoc::Function, attr);
     }
     fn compile_declared_function(&mut self, name: String, func: Function) {
         let return_type_is_void = matches!(func.return_type, Expr::Ident(ref s) if s == "void");

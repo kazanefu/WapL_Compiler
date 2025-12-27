@@ -137,7 +137,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let status = Command::new(&clang_path)
                     .args([
                         "--target=wasm32-unknown-unknown",
-                        "--no-entry",
+                        "-Wl,--no-entry",
                         "-nostdlib",
                         &format!("-{}", args.opt_level),
                         &ll_filename,

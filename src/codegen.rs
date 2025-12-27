@@ -4,10 +4,18 @@ use inkwell::AddressSpace;
 use inkwell::FloatPredicate;
 use inkwell::InlineAsmDialect;
 use inkwell::IntPredicate;
+use inkwell::OptimizationLevel;
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
+use inkwell::targets::CodeModel;
+use inkwell::targets::InitializationConfig;
+use inkwell::targets::RelocMode;
+use inkwell::targets::Target;
+use inkwell::targets::TargetData;
+use inkwell::targets::TargetMachine;
+use inkwell::targets::TargetTriple;
 use inkwell::types::BasicTypeEnum;
 use inkwell::types::FloatType;
 use inkwell::types::*;
@@ -90,7 +98,8 @@ pub struct Codegen<'ctx> {
 }
 
 impl<'ctx> Codegen<'ctx> {
-    pub fn new(context: &'ctx Context, name: &str,bitsize: String) -> Self {
+    pub fn new(context: &'ctx Context, name: &str, bitsize: String, wasm: bool) -> Self {
+        Target::initialize_all(&InitializationConfig::default());
         let module = context.create_module(name);
         let builder = context.create_builder();
 
@@ -106,8 +115,33 @@ impl<'ctx> Codegen<'ctx> {
             current_owners: HashMap::new(),
             scope_owners: ScopeOwner::new(),
             global_variables: HashMap::new(),
-            bitsize
+            bitsize: bitsize.clone(),
         };
+        if bitsize.as_str() == "32" && wasm {
+            this.module.set_triple(&TargetTriple::create("wasm32-wasi"));
+            this.module.set_data_layout(
+                &TargetData::create("e-m:e-p:32:32-i64:64-n32:64-S128").get_data_layout(),
+            );
+        } else {
+            // ネイティブ（例: x86_64-linux-gnu）
+            let triple = TargetMachine::get_default_triple();
+            let target = Target::from_triple(&triple).unwrap();
+
+            let tm = target
+                .create_target_machine(
+                    &triple,
+                    "generic",
+                    "",
+                    OptimizationLevel::Default,
+                    RelocMode::Default,
+                    CodeModel::Default,
+                )
+                .unwrap();
+
+            this.module.set_triple(&triple);
+            this.module
+                .set_data_layout(&tm.get_target_data().get_data_layout());
+        }
         this.init_external_functions(); // declare C functions  
         this
     }
@@ -560,7 +594,10 @@ impl<'ctx> Codegen<'ctx> {
                 None,
             )),
             Expr::IsizeNumber(n) => Some((
-                self.llvm_type_from_expr(&Expr::Ident("isize".to_string())).into_int_type().const_int(*n as u64, false).into(),
+                self.llvm_type_from_expr(&Expr::Ident("isize".to_string()))
+                    .into_int_type()
+                    .const_int(*n as u64, false)
+                    .into(),
                 Expr::Ident("isize".to_string()),
                 None,
             )),
@@ -1317,11 +1354,13 @@ impl<'ctx> Codegen<'ctx> {
                     }
                 }
                 "as" => {
-                    let value = self.compile_expr(&args[0], variables).expect("fail to compile_expr at \"as\"");
+                    let value = self
+                        .compile_expr(&args[0], variables)
+                        .expect("fail to compile_expr at \"as\"");
                     Some((
                         self.build_cast(value.0, &args[1], &value.1),
                         args[1].clone(),
-                        None
+                        None,
                     ))
                 }
                 // Deprecated names for backward compatibility
@@ -2243,7 +2282,13 @@ impl<'ctx> Codegen<'ctx> {
                     st.as_basic_type_enum()
                 } else {
                     match name.as_str() {
-                        "isize" => if self.bitsize.as_str() == "32"{self.context.i32_type().into()}else{self.context.i64_type().into()},
+                        "isize" => {
+                            if self.bitsize.as_str() == "32" {
+                                self.context.i32_type().into()
+                            } else {
+                                self.context.i64_type().into()
+                            }
+                        }
                         "i32" => self.context.i32_type().into(),
                         "i64" => self.context.i64_type().into(),
                         "f32" => self.context.f32_type().into(),
@@ -3157,14 +3202,15 @@ impl<'ctx> Codegen<'ctx> {
         // strtol(i8*, i8**, i32)
         self.module.add_function(
             "strtol",
-            self.llvm_type_from_expr(&Expr::Ident("isize".to_string())).fn_type(
-                &[
-                    context.ptr_type(Default::default()).into(),
-                    context.ptr_type(Default::default()).into(),
-                    context.i32_type().into(),
-                ],
-                false,
-            ),
+            self.llvm_type_from_expr(&Expr::Ident("isize".to_string()))
+                .fn_type(
+                    &[
+                        context.ptr_type(Default::default()).into(),
+                        context.ptr_type(Default::default()).into(),
+                        context.i32_type().into(),
+                    ],
+                    false,
+                ),
             None,
         );
 

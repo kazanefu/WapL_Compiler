@@ -97,7 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         //IR作成
         let context = Context::create();
-        let mut codegen = Codegen::new(&context, "wapl_module", args.bitsize.clone());
+        let mut codegen = Codegen::new(&context, "wapl_module", args.bitsize.clone(),args.wasm);
         codegen.compile_program(parsed);
 
         // 出力.ll名

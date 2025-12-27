@@ -268,7 +268,7 @@ bitsize = "32"
 sysroot = "$HOME/wasi-sdk-29.0-x86_64-linux/share/wasi-sysroot"
 wasm2wat = "wasm2wat"
 wat = "src/${NAME}.wat"
-wasmruntime = "/usr/wasmtime-v40.0.0-x86_64-linux/wasmtime"
+wasmruntime = "wasmtime"
 
 EOFTOML
     ;;
@@ -323,7 +323,6 @@ EOFTOML
     OUT=$(read_toml wasm output "$TOML")
     RUNTIME=$(read_toml wasm wasmruntime "$TOML")
     "$RUNTIME" "$OUT"
-    $OUT
     ;;
 
   std_load)

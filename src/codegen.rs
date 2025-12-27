@@ -3120,9 +3120,15 @@ impl<'ctx> Codegen<'ctx> {
     fn compile_sizeof(&self, ty_expr: &Expr) -> BasicValueEnum<'ctx> {
         let llvm_ty = self.llvm_type_from_expr(ty_expr);
 
-        let size = llvm_ty.size_of().expect("LLVM failed to compute size_of");
+        let size_i64 = llvm_ty.size_of().expect("LLVM failed to compute size_of");
 
-        size.as_basic_value_enum()
+        let isize_ty = self.llvm_type_from_expr(&Expr::Ident("isize".to_string()));
+
+        let size_isize = self
+            .builder
+            .build_int_cast(size_i64, isize_ty.into_int_type(), "sizeof_isize").unwrap();
+
+        size_isize.as_basic_value_enum()
     }
     fn compile_to_anyptr(
         &mut self,

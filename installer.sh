@@ -268,7 +268,7 @@ bitsize = "32"
 sysroot = "$HOME/wasi-sdk-29.0-x86_64-linux/share/wasi-sysroot"
 wasm2wat = "wasm2wat"
 wat = "src/${NAME}.wat"
-wasmruntime = "$HOME/wasmtime-v40.0.0-x86_64-linux/wasmtime"
+wasmruntime = "/usr/wasmtime-v40.0.0-x86_64-linux/wasmtime"
 
 EOFTOML
     ;;

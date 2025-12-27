@@ -360,7 +360,7 @@ impl Parser {
         }
     }
     fn parse_export(&mut self) -> Export {
-        self.expect(&Token::Declare);
+        self.expect(&Token::Export);
         let name = match self.next() {
             Some(Token::Ident(s)) => s.clone(),
             other => panic!("expected function name, got {:?}", other),

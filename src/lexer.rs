@@ -23,6 +23,7 @@ pub enum Token {
     If,
     ElIf,
     Else,
+    Export,
 
     // signs & operators
     Comma,
@@ -271,6 +272,7 @@ impl Tokenizer {
                 "if" => Token::If,
                 "elif" => Token::ElIf,
                 "else" => Token::Else,
+                "export" => Token::Export,
                 _ => Token::Ident(s),
             };
         }

@@ -55,6 +55,7 @@ pub enum TopLevel {
     Function(Function),
     Struct(Struct),
     Declare(Declare),
+    Export(Export),
 }
 #[derive(Debug, Clone)]
 pub struct Declare {
@@ -62,6 +63,10 @@ pub struct Declare {
     pub return_type: Expr,
     pub args: Vec<Expr>,
     pub is_vararg: bool,
+}
+#[derive(Debug, Clone)]
+pub struct Export {
+    pub name: String,
 }
 #[derive(Debug, Clone)]
 pub struct Function {
@@ -87,11 +92,11 @@ pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
     has_main: bool,
-    toplevel_counter:usize,
+    toplevel_counter: usize,
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>,toplevel_counter:usize) -> Self {
+    pub fn new(tokens: Vec<Token>, toplevel_counter: usize) -> Self {
         Self {
             tokens,
             pos: 0,
@@ -161,21 +166,21 @@ impl Parser {
         }
         let mut tokenizer = Tokenizer::new(source.as_str());
         let tokens = tokenizer.tokenize();
-        
-        let mut parser = Parser::new(tokens,top_count);
-        let (parsed,temp_top_count) = parser.parse_program(import_map);
+
+        let mut parser = Parser::new(tokens, top_count);
+        let (parsed, temp_top_count) = parser.parse_program(import_map);
         top_count = temp_top_count;
         for module_ast in parsed.functions {
             funcs.push(module_ast);
         }
-        
+
         import_map.push(path.to_string());
         self.toplevel_counter = top_count;
     }
     // -------------------------
     // Parse entire program
     // -------------------------
-    pub fn parse_program(&mut self, import_map: &mut Vec<String>) -> (Program,usize) {
+    pub fn parse_program(&mut self, import_map: &mut Vec<String>) -> (Program, usize) {
         let mut funcs = Vec::new();
 
         while let Some(tok) = self.peek() {
@@ -195,6 +200,9 @@ impl Parser {
                 Token::Semicolon => {
                     self.no_return_next();
                 }
+                Token::Export => {
+                    funcs.push(TopLevel::Export(self.parse_export()));
+                }
                 _ => {
                     // toplevel eval
                     let expr = self.parse_expr();
@@ -202,7 +210,7 @@ impl Parser {
                         Expr::Call { name, args: _ } if name == "main" => {}
                         other => {
                             funcs.push(TopLevel::Function(Function {
-                                name: format!("toplevel_child.{}",self.toplevel_counter),
+                                name: format!("toplevel_child.{}", self.toplevel_counter),
                                 return_type: Expr::Ident("void".to_string()),
                                 args: vec![],
                                 body: vec![Stmt { expr: other }],
@@ -214,10 +222,13 @@ impl Parser {
             }
         }
 
-        (Program {
-            functions: funcs,
-            has_main: self.has_main,
-        },self.toplevel_counter)
+        (
+            Program {
+                functions: funcs,
+                has_main: self.has_main,
+            },
+            self.toplevel_counter,
+        )
     }
 
     // -------------------------
@@ -347,6 +358,15 @@ impl Parser {
             _return_type: return_type,
             args,
         }
+    }
+    fn parse_export(&mut self) -> Export {
+        self.expect(&Token::Declare);
+        let name = match self.next() {
+            Some(Token::Ident(s)) => s.clone(),
+            other => panic!("expected function name, got {:?}", other),
+        };
+        self.consume_semicolon();
+        Export { name }
     }
 
     fn parse_declare(&mut self) -> Declare {
@@ -481,8 +501,11 @@ impl Parser {
             Some(Token::Colon) => {}
             _ => {
                 self.no_return_back();
-                if name.as_str() == "str"{
-                    return Expr::TypeApply { base: "ptr".to_string(), args: vec![Expr::Ident("char".to_string())] }
+                if name.as_str() == "str" {
+                    return Expr::TypeApply {
+                        base: "ptr".to_string(),
+                        args: vec![Expr::Ident("char".to_string())],
+                    };
                 }
                 return Expr::Ident(name.clone());
             } //normal types
@@ -569,17 +592,22 @@ impl Parser {
         let mut branches = Vec::new();
         let mut else_block = None;
 
-
         loop {
             match self.next() {
                 Some(Token::Lsep(LSeparator::LParen)) => {}
-                other =>if !has_else{panic!("expected '(' after if got {:?}", other);}else{self.no_return_back();} ,
+                other => {
+                    if !has_else {
+                        panic!("expected '(' after if got {:?}", other);
+                    } else {
+                        self.no_return_back();
+                    }
+                }
             }
 
             let mut args = Vec::new();
 
             loop {
-                if has_else{
+                if has_else {
                     break;
                 }
                 match self.peek() {
@@ -621,21 +649,31 @@ impl Parser {
 
             self.expect(&Token::Rsep(RSeparator::RBrace));
             self.consume_semicolon();
-            if has_else{
+            if has_else {
                 else_block = Some(stmts);
                 break;
-            }else {
-                branches.push(IfBranch { cond: args, body: stmts });
+            } else {
+                branches.push(IfBranch {
+                    cond: args,
+                    body: stmts,
+                });
             }
             match self.next().unwrap() {
-                Token::ElIf=>{},
-                Token::Else=>{has_else = true;},
-                _ => {self.no_return_back();break;}                
+                Token::ElIf => {}
+                Token::Else => {
+                    has_else = true;
+                }
+                _ => {
+                    self.no_return_back();
+                    break;
+                }
             }
-            
         }
 
-        Expr::If { branches, else_block}
+        Expr::If {
+            branches,
+            else_block,
+        }
     }
     fn parse_loopif(&mut self) -> Expr {
         self.expect(&Token::Colon);

@@ -6,10 +6,10 @@ use clap::Parser;
 use codegen::*;
 use inkwell::context::Context;
 use lexer::*;
+use std::env;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use std::env;
 
 /// WapLコンパイラ(llvm irを作ってそれをclangで実行ファイルにする)
 #[derive(clap::Parser, Debug)]
@@ -45,6 +45,10 @@ struct Args {
     /// WASM build
     #[arg(long)]
     wasm: bool,
+
+    /// WASM browser build
+    #[arg(long)]
+    browser: bool,
 
     /// sysroot
     #[arg(
@@ -83,8 +87,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         //構文解析
         let mut import_map: Vec<String> = Vec::new();
-        let mut parser = parser::Parser::new(tokens,0);
-        let (parsed,_) = parser.parse_program(&mut import_map);
+        let mut parser = parser::Parser::new(tokens, 0);
+        let (parsed, _) = parser.parse_program(&mut import_map);
         //デバッグ用にAST出力
         if args.debug {
             println!("AST");
@@ -97,7 +101,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         //IR作成
         let context = Context::create();
-        let mut codegen = Codegen::new(&context, "wapl_module", args.bitsize.clone(),args.wasm);
+        let mut codegen = Codegen::new(&context, "wapl_module", args.bitsize.clone(), args.wasm,args.browser);
         codegen.compile_program(parsed);
 
         // 出力.ll名
@@ -127,38 +131,73 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Build success! → {}", args.output);
         }
         if args.wasm {
-            let sysroot_path = args.sysroot.replace("$HOME", &env::var("HOME")?);
-            let clang_path = args.clang.replace("$HOME", &env::var("HOME")?);
-            // ① clang
-            let status = Command::new(&clang_path)
-                .args([
-                    "--target=wasm32-wasi",
-                    &format!("--sysroot={}", sysroot_path),
-                    &format!("-{}", args.opt_level),
-                    &ll_filename,
-                    "-o",
-                    &args.output,
-                ])
-                .status()?;
+            if args.browser {
+                let clang_path = args.clang.replace("$HOME", &env::var("HOME")?);
+                // ① clang
+                let status = Command::new(&clang_path)
+                    .args([
+                        "--target=wasm32-unknown-unknown",
+                        "--no-entry",
+                        "-nostdlib",
+                        &format!("-{}", args.opt_level),
+                        &ll_filename,
+                        "-o",
+                        &args.output,
+                    ])
+                    .status()?;
 
-            if !status.success() {
-                return Err("wasm clang failed to compile".into());
+                if !status.success() {
+                    return Err("wasm clang failed to compile".into());
+                }
+
+                let wasm2wat_path = args.wasm2wat.replace("$HOME", &env::var("HOME")?);
+
+                // ② wasm2wat
+                let status = Command::new(&wasm2wat_path)
+                    .args([&args.output, "-o", &args.wat])
+                    .status()?;
+
+                if !status.success() {
+                    return Err("wasm2wat failed".into());
+                }
+
+                println!("WASM Build success!");
+                println!("  wasm → {}", args.output);
+                println!("  wat  → {}", args.wat);
+            } else {
+                let sysroot_path = args.sysroot.replace("$HOME", &env::var("HOME")?);
+                let clang_path = args.clang.replace("$HOME", &env::var("HOME")?);
+                // ① clang
+                let status = Command::new(&clang_path)
+                    .args([
+                        "--target=wasm32-wasi",
+                        &format!("--sysroot={}", sysroot_path),
+                        &format!("-{}", args.opt_level),
+                        &ll_filename,
+                        "-o",
+                        &args.output,
+                    ])
+                    .status()?;
+
+                if !status.success() {
+                    return Err("wasm clang failed to compile".into());
+                }
+
+                let wasm2wat_path = args.wasm2wat.replace("$HOME", &env::var("HOME")?);
+
+                // ② wasm2wat
+                let status = Command::new(&wasm2wat_path)
+                    .args([&args.output, "-o", &args.wat])
+                    .status()?;
+
+                if !status.success() {
+                    return Err("wasm2wat failed".into());
+                }
+
+                println!("WASM Build success!");
+                println!("  wasm → {}", args.output);
+                println!("  wat  → {}", args.wat);
             }
-
-            let wasm2wat_path = args.wasm2wat.replace("$HOME", &env::var("HOME")?);
-
-            // ② wasm2wat
-            let status = Command::new(&wasm2wat_path)
-                .args([&args.output, "-o", &args.wat])
-                .status()?;
-
-            if !status.success() {
-                return Err("wasm2wat failed".into());
-            }
-
-            println!("WASM Build success!");
-            println!("  wasm → {}", args.output);
-            println!("  wat  → {}", args.wat);
         }
 
         Ok(())

@@ -306,8 +306,22 @@ EOFTOML
     WASMTOWAT=$(read_toml wasm wasm2wat "$TOML")
     WAT=$(read_toml wasm wat "$TOML")
     mkdir -p "./target"
-    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG" --wasm --bitsize "$BITSIZE" --wasm2wat "$WASMTOWAT" --wat "$WAT"
+    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG" --wasm --bitsize "$BITSIZE" --wasm2wat "$WASMTOWAT" --wat "$WAT" --sysroot "$SYSROOT"
     echo "WASM Build complete: $OUT"
+    ;;
+  wasm_browser)
+    TOML="wapl.toml"
+    SRC=$(read_toml wasm input "$TOML")
+    OUT=$(read_toml wasm output "$TOML")
+    OPT=$(read_toml wasm opt "$TOML")
+    CLANG=$(read_toml wasm clang "$TOML")
+    SYSROOT=$(read_toml wasm sysroot "$TOML")
+    BITSIZE=$(read_toml wasm bitsize "$TOML")
+    WASMTOWAT=$(read_toml wasm wasm2wat "$TOML")
+    WAT=$(read_toml wasm wat "$TOML")
+    mkdir -p "./target"
+    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG" --wasm --bitsize "$BITSIZE" --wasm2wat "$WASMTOWAT" --wat "$WAT" --browser
+    echo "WASM Browser Build complete: $OUT"
     ;;
 
   run)

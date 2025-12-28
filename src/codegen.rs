@@ -1993,7 +1993,7 @@ impl<'ctx> Codegen<'ctx> {
 
                     None
                 }
-                //return type size in byte as i64
+                //return type size in byte as isize
                 "sizeof" => Some((
                     self.compile_sizeof(&args[0]),
                     Expr::Ident("isize".to_string()),
@@ -2120,6 +2120,20 @@ impl<'ctx> Codegen<'ctx> {
                     args[0].clone(),
                     None,
                 )),
+                "trap" => {
+                    // intrinsic を宣言 or 取得
+                    let trap_fn = match self.module.get_function("llvm.trap") {
+                        Some(f) => f,
+                        None => self.module.add_function(
+                            "llvm.trap",
+                            self.context.void_type().fn_type(&[], false),
+                            None,
+                        ),
+                    };
+                    self.builder.build_call(trap_fn, &[], "").unwrap();
+                    self.builder.build_unreachable().unwrap();
+                    None
+                }
                 // Call other functions
                 name => {
                     // Lookup LLVM function by name.

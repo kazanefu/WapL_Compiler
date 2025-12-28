@@ -2564,7 +2564,7 @@ impl<'ctx> Codegen<'ctx> {
             let (val, ty, _ptr) = self.compile_expr(arg, variables).unwrap();
 
             if let Some(ref expected) = elem_ty {
-                if type_match(expected, &ty) {
+                if !type_match(expected, &ty) {
                     self.println_error_message(&format!(
                         "array() type mismatch. expected {:?} found {:?}",
                         expected, &ty

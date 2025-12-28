@@ -1412,7 +1412,7 @@ impl<'ctx> Codegen<'ctx> {
                         .compile_expr(&args[0], variables)
                         .expect("fail to compile_expr at \"as\"");
                     Some((
-                        self.build_cast(value.0, &args[1], &value.1, false),
+                        self.build_cast(value.0, value.2, &args[1], &value.1, false),
                         args[1].clone(),
                         None,
                     ))
@@ -1422,7 +1422,7 @@ impl<'ctx> Codegen<'ctx> {
                         .compile_expr(&args[0], variables)
                         .expect("fail to compile_expr at \"as\"");
                     Some((
-                        self.build_cast(value.0, &args[1], &value.1, true),
+                        self.build_cast(value.0, value.2, &args[1], &value.1, true),
                         args[1].clone(),
                         None,
                     ))
@@ -1691,6 +1691,137 @@ impl<'ctx> Codegen<'ctx> {
                         }),
                     ))
                 }
+                "[array]" => {
+                    let depth = args.len();
+
+                    // arr は [T;N] の値
+                    let (_arr_val, arr_ty, arr_ptr_opt) =
+                        self.compile_expr(&args[0], variables).unwrap();
+
+                    let arr_ptr = arr_ptr_opt.expect("[array] requires array lvalue").ptr;
+
+                    let mut last_ptr = arr_ptr;
+                    let mut typeexp = arr_ty.clone();
+
+                    for i in 1..depth {
+                        let (idx_val, _idx_ty, _) = self.compile_expr(&args[i], variables).unwrap();
+
+                        let idx_int = match idx_val {
+                            BasicValueEnum::IntValue(i) => self.int_to_i64(i),
+                            _ => panic!("[array] index must be int"),
+                        };
+
+                        match &typeexp {
+                            // [T;N]
+                            Expr::TypeApply { base, args: _ } if base.starts_with("array_") => {
+                                let gep = unsafe {
+                                    self.builder.build_gep(
+                                        self.llvm_type_from_expr(&typeexp),
+                                        last_ptr,
+                                        &[self.context.i32_type().const_zero(), idx_int],
+                                        "array_idx",
+                                    )
+                                }
+                                .unwrap();
+
+                                last_ptr = match expr_deref(&typeexp) {
+                                    Expr::TypeApply { base, args: _ }
+                                        if base.starts_with("array_") =>
+                                    {
+                                        gep
+                                    }
+                                    Expr::TypeApply { base, args: _ }
+                                        if base == "ptr"
+                                            || base == "&"
+                                            || base == "&mut"
+                                            || base == "*" =>
+                                    {
+                                        if i == depth - 1 {
+                                            last_ptr = gep;
+                                            typeexp = expr_deref(&typeexp);
+                                            break;
+                                        }
+                                        self.builder
+                                            .build_load(
+                                                self.llvm_type_from_expr(&expr_deref(&typeexp)),
+                                                gep,
+                                                "idx_load",
+                                            )
+                                            .unwrap()
+                                            .into_pointer_value()
+                                    }
+                                    _ => gep,
+                                };
+
+                                typeexp = expr_deref(&typeexp);
+                            }
+
+                            // ptr<T>
+                            Expr::TypeApply { base, args: _ }
+                                if base == "ptr"
+                                    || base == "&"
+                                    || base == "&mut"
+                                    || base == "*" =>
+                            {
+                                let gep = unsafe {
+                                    self.builder.build_gep(
+                                        self.llvm_type_from_expr(&expr_deref(&typeexp)),
+                                        last_ptr,
+                                        &[idx_int],
+                                        "ptr_idx",
+                                    )
+                                }
+                                .unwrap();
+                                last_ptr = match expr_deref(&typeexp) {
+                                    Expr::TypeApply { base, args: _ }
+                                        if base.starts_with("array_") =>
+                                    {
+                                        gep
+                                    }
+                                    Expr::TypeApply { base, args: _ }
+                                        if base == "ptr"
+                                            || base == "&"
+                                            || base == "&mut"
+                                            || base == "*" =>
+                                    {
+                                        if i == depth - 1 {
+                                            last_ptr = gep;
+                                            typeexp = expr_deref(&typeexp);
+                                            break;
+                                        }
+                                        self.builder
+                                            .build_load(
+                                                self.llvm_type_from_expr(&expr_deref(&typeexp)),
+                                                gep,
+                                                "idx_load",
+                                            )
+                                            .unwrap()
+                                            .into_pointer_value()
+                                    }
+                                    _ => gep,
+                                };
+                                typeexp = expr_deref(&typeexp);
+                            }
+
+                            _ => panic!("[array] indexing non-array type {:?}", typeexp),
+                        }
+                    }
+
+                    let loaded = self
+                        .builder
+                        .build_load(self.llvm_type_from_expr(&typeexp), last_ptr, "array_load")
+                        .unwrap();
+
+                    Some((
+                        loaded.into(),
+                        typeexp.clone(),
+                        Some(VariablesPointerAndTypes {
+                            ptr: last_ptr,
+                            typeexpr: typeexp,
+                        }),
+                    ))
+                }
+                "array" => self.build_array_value(variables, args),
                 // Allocate memory on the stack
                 "alloc_array" | "alloc" | "salloc" => {
                     // args: [type_name, length_expr]
@@ -2383,16 +2514,30 @@ impl<'ctx> Codegen<'ctx> {
                     }
                 }
             }
-            Expr::TypeApply { base, args } => match base.as_str() {
-                "ptr" | "*" | "&" | "&mut" | "&n" => {
+            Expr::TypeApply { base, args } => {
+                if let Some(len_str) = base.strip_prefix("array_") {
                     if args.len() != 1 {
-                        panic!("ptr<T> requires exactly one type argument");
+                        panic!("array_N:T requires exactly one type argument");
                     }
-                    let _elem_ty = self.llvm_type_from_expr(&args[0]);
-                    self.context.ptr_type(Default::default()).into()
+
+                    let len: u32 = len_str
+                        .parse()
+                        .unwrap_or_else(|_| panic!("Invalid array size in type: {}", base));
+
+                    let elem_ty = self.llvm_type_from_expr(&args[0]);
+                    return elem_ty.array_type(len).into();
                 }
-                _ => panic!("Unknown type constructor: {}", base),
-            },
+                match base.as_str() {
+                    "ptr" | "*" | "&" | "&mut" | "&n" => {
+                        if args.len() != 1 {
+                            panic!("ptr<T> requires exactly one type argument");
+                        }
+                        let _elem_ty = self.llvm_type_from_expr(&args[0]);
+                        self.context.ptr_type(Default::default()).into()
+                    }
+                    _ => panic!("Unknown type constructor: {}", base),
+                }
+            }
             _ => panic!(
                 "Expected identifier type {:?} : at function {}",
                 expr,
@@ -2403,6 +2548,115 @@ impl<'ctx> Codegen<'ctx> {
                     .clone(),
             ),
         }
+    }
+    fn build_array_value(
+        &mut self,
+        variables: &mut HashMap<String, VariablesPointerAndTypes<'ctx>>,
+        args: &[Expr],
+    ) -> Option<(
+        BasicValueEnum<'ctx>,
+        Expr,
+        Option<VariablesPointerAndTypes<'ctx>>,
+    )> {
+        let mut values = Vec::new();
+        let mut elem_ty: Option<Expr> = None;
+        for arg in args {
+            let (val, ty, _ptr) = self.compile_expr(arg, variables).unwrap();
+
+            if let Some(ref expected) = elem_ty {
+                if type_match(expected, &ty) {
+                    self.println_error_message(&format!(
+                        "array() type mismatch. expected {:?} found {:?}",
+                        expected, &ty
+                    ));
+                }
+            } else {
+                elem_ty = Some(ty.clone());
+            }
+
+            values.push(val);
+        }
+        let n = values.len() as u32;
+        let llvm_elem_ty = self.llvm_type_from_expr(elem_ty.as_ref().unwrap());
+        let llvm_array_ty = llvm_elem_ty.array_type(n);
+        let is_const = values.iter().all(|v| v.is_const());
+        if is_const {
+            let const_array = match llvm_elem_ty {
+                BasicTypeEnum::IntType(t) => t
+                    .const_array(
+                        &values
+                            .iter()
+                            .map(|v| v.into_int_value())
+                            .collect::<Vec<_>>(),
+                    )
+                    .as_basic_value_enum(),
+                BasicTypeEnum::FloatType(t) => t
+                    .const_array(
+                        &values
+                            .iter()
+                            .map(|v| v.into_float_value())
+                            .collect::<Vec<_>>(),
+                    )
+                    .as_basic_value_enum(),
+                BasicTypeEnum::ArrayType(t) => t
+                    .const_array(
+                        &values
+                            .iter()
+                            .map(|v| v.into_array_value())
+                            .collect::<Vec<_>>(),
+                    )
+                    .as_basic_value_enum(),
+                BasicTypeEnum::StructType(t) => t
+                    .const_array(
+                        &values
+                            .iter()
+                            .map(|v| v.into_struct_value())
+                            .collect::<Vec<_>>(),
+                    )
+                    .as_basic_value_enum(),
+                _ => panic!("unsupported const array element type"),
+            };
+            return Some((
+                const_array.into(),
+                Expr::TypeApply {
+                    base: format!("array_{}", n),
+                    args: vec![elem_ty.unwrap()],
+                },
+                None,
+            ));
+        }
+        let tmp = self
+            .builder
+            .build_alloca(llvm_array_ty, "array_tmp")
+            .unwrap();
+
+        for (i, v) in values.iter().enumerate() {
+            let idx = self.context.i32_type().const_int(i as u64, false);
+            let elem_ptr = unsafe {
+                self.builder.build_gep(
+                    llvm_array_ty,
+                    tmp,
+                    &[self.context.i32_type().const_zero(), idx],
+                    "array_elem",
+                )
+            }
+            .unwrap();
+
+            self.builder.build_store(elem_ptr, *v).unwrap();
+        }
+
+        let array_val = self
+            .builder
+            .build_load(llvm_array_ty, tmp, "array_val")
+            .unwrap();
+        Some((
+            array_val.into(),
+            Expr::TypeApply {
+                base: format!("array_{}", n),
+                args: vec![elem_ty.unwrap()],
+            },
+            None,
+        ))
     }
     pub fn build_format_from_ptr(
         &mut self,
@@ -2728,6 +2982,7 @@ impl<'ctx> Codegen<'ctx> {
     fn build_cast(
         &self,
         value: BasicValueEnum<'ctx>,
+        value_ptr: Option<VariablesPointerAndTypes<'ctx>>,
         to_ty: &Expr,
         from_ty: &Expr,
         is_unsafe: bool,
@@ -2788,6 +3043,32 @@ impl<'ctx> Codegen<'ctx> {
                 }
                 self.builder
                     .build_bit_cast(value.into_pointer_value(), to, "ptr_cast")
+                    .unwrap()
+                    .into()
+            }
+            (BasicTypeEnum::PointerType(to), BasicTypeEnum::ArrayType(arr_ty)) => {
+                let array_ptr = if let Some(ptr) = value_ptr {
+                    ptr.ptr
+                } else {
+                    // rvalue → 一時領域を作る（コピー）
+                    let tmp = self.builder.build_alloca(arr_ty, "array_tmp").unwrap();
+                    self.builder.build_store(tmp, value).unwrap();
+                    tmp
+                };
+                let elem_ptr = unsafe {
+                    self.builder.build_gep(
+                        arr_ty,
+                        array_ptr,
+                        &[
+                            self.context.i32_type().const_zero(),
+                            self.context.i32_type().const_zero(),
+                        ],
+                        "array_to_ptr",
+                    )
+                }
+                .unwrap();
+                self.builder
+                    .build_bit_cast(elem_ptr, to, "array_to_ptr_cast")
                     .unwrap()
                     .into()
             }

@@ -1412,7 +1412,17 @@ impl<'ctx> Codegen<'ctx> {
                         .compile_expr(&args[0], variables)
                         .expect("fail to compile_expr at \"as\"");
                     Some((
-                        self.build_cast(value.0, &args[1], &value.1),
+                        self.build_cast(value.0, &args[1], &value.1, false),
+                        args[1].clone(),
+                        None,
+                    ))
+                }
+                "unsafe_as" => {
+                    let value = self
+                        .compile_expr(&args[0], variables)
+                        .expect("fail to compile_expr at \"as\"");
+                    Some((
+                        self.build_cast(value.0, &args[1], &value.1, true),
                         args[1].clone(),
                         None,
                     ))
@@ -2706,6 +2716,7 @@ impl<'ctx> Codegen<'ctx> {
         value: BasicValueEnum<'ctx>,
         to_ty: &Expr,
         from_ty: &Expr,
+        is_unsafe: bool,
     ) -> BasicValueEnum<'ctx> {
         let to_ty_llvm = self.llvm_type_from_expr(to_ty);
         let from_ty_llvm = self.llvm_type_from_expr(from_ty);
@@ -2739,6 +2750,33 @@ impl<'ctx> Codegen<'ctx> {
                 .build_float_to_signed_int(value.into_float_value(), to, "sitofp")
                 .unwrap()
                 .into(),
+            (BasicTypeEnum::PointerType(to), BasicTypeEnum::IntType(_)) => {
+                if !is_unsafe {
+                    self.println_error_message(" \"as\" can not cast ptr type. use \"unsafe_as\"");
+                }
+                self.builder
+                    .build_int_to_ptr(value.into_int_value(), to, "int_to_ptr")
+                    .unwrap()
+                    .into()
+            }
+            (BasicTypeEnum::IntType(to), BasicTypeEnum::PointerType(_)) => {
+                if !is_unsafe {
+                    self.println_error_message(" \"as\" can not cast ptr type. use \"unsafe_as\"");
+                }
+                self.builder
+                    .build_ptr_to_int(value.into_pointer_value(), to, "ptr_to_int")
+                    .unwrap()
+                    .into()
+            }
+            (BasicTypeEnum::PointerType(to), BasicTypeEnum::PointerType(_)) => {
+                if !is_unsafe {
+                    self.println_error_message(" \"as\" can not cast ptr type. use \"unsafe_as\"");
+                }
+                self.builder
+                    .build_bit_cast(value.into_pointer_value(), to, "ptr_cast")
+                    .unwrap()
+                    .into()
+            }
             _ => panic!("unsupported cast type"),
         }
     }
@@ -3685,6 +3723,18 @@ impl<'ctx> Codegen<'ctx> {
             Expr::String(s) => s.clone(),
             _ => panic!("unsafe_asm requires string literal"),
         }
+    }
+    fn println_error_message(&self, msg: &str) {
+        println!(
+            "{}: {} : at function {}",
+            "Error".red().bold(),
+            msg,
+            self.current_fn
+                .as_ref()
+                .expect("return: out of function")
+                .fn_name
+                .clone(),
+        );
     }
     fn compile_unsafe_asm(
         &mut self,

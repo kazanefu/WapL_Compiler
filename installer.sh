@@ -269,6 +269,7 @@ sysroot = "$HOME/wasi-sdk-29.0-x86_64-linux/share/wasi-sysroot"
 wasm2wat = "wasm2wat"
 wat = "src/${NAME}.wat"
 wasmruntime = "wasmtime"
+memory_size = "2"
 
 EOFTOML
     ;;
@@ -305,8 +306,9 @@ EOFTOML
     BITSIZE=$(read_toml wasm bitsize "$TOML")
     WASMTOWAT=$(read_toml wasm wasm2wat "$TOML")
     WAT=$(read_toml wasm wat "$TOML")
+    MEMSIZE=$(read_toml wasm memory_size "$TOML")
     mkdir -p "./target"
-    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG" --wasm --bitsize "$BITSIZE" --wasm2wat "$WASMTOWAT" --wat "$WAT" --sysroot "$SYSROOT"
+    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG" --wasm --bitsize "$BITSIZE" --wasm2wat "$WASMTOWAT" --wat "$WAT" --sysroot "$SYSROOT" --memory_size "$MEMSIZE"
     echo "WASM Build complete: $OUT"
     ;;
   wasm_browser)
@@ -319,8 +321,9 @@ EOFTOML
     BITSIZE=$(read_toml wasm bitsize "$TOML")
     WASMTOWAT=$(read_toml wasm wasm2wat "$TOML")
     WAT=$(read_toml wasm wat "$TOML")
+    MEMSIZE=$(read_toml wasm memory_size "$TOML")
     mkdir -p "./target"
-    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG" --wasm --bitsize "$BITSIZE" --wasm2wat "$WASMTOWAT" --wat "$WAT" --browser
+    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG" --wasm --bitsize "$BITSIZE" --wasm2wat "$WASMTOWAT" --wat "$WAT" --browser --memory_size "$MEMSIZE"
     echo "WASM Browser Build complete: $OUT"
     ;;
 

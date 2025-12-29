@@ -269,7 +269,7 @@ sysroot = "$HOME/wasi-sdk-29.0-x86_64-linux/share/wasi-sysroot"
 wasm2wat = "wasm2wat"
 wat = "src/${NAME}.wat"
 wasmruntime = "wasmtime"
-memory_size = "2"
+memory-size = "655360"
 
 EOFTOML
     ;;

@@ -66,7 +66,7 @@ struct Args {
     wat: String,
 
     /// wasmでのmemoryの初期値
-    #[arg(long, default_value = "2")]
+    #[arg(long, default_value = "655360")]
     memory_size: String,
 }
 

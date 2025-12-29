@@ -1695,10 +1695,18 @@ impl<'ctx> Codegen<'ctx> {
                     let depth = args.len();
 
                     // arr は [T;N] の値
-                    let (_arr_val, arr_ty, arr_ptr_opt) =
+                    let (arr_val, arr_ty, arr_ptr_opt) =
                         self.compile_expr(&args[0], variables).unwrap();
 
-                    let arr_ptr = arr_ptr_opt.expect("[array] requires array lvalue").ptr;
+                    let arr_ptr = match &arr_ty{
+                        Expr::TypeApply { base, args: _ } if base.starts_with("array_") => arr_ptr_opt.expect("[array] requires array lvalue").ptr,
+                        Expr::TypeApply { base, args: _ }
+                                        if base == "ptr"
+                                            || base == "&"
+                                            || base == "&mut"
+                                            || base == "*" => arr_val.into_pointer_value(),
+                        _ => panic!("[array] require pointer or array_N:T ")
+                    };
 
                     let mut last_ptr = arr_ptr;
                     let mut typeexp = arr_ty.clone();

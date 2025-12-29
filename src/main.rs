@@ -64,6 +64,10 @@ struct Args {
     /// output wat
     #[arg(long, default_value = "a.wat")]
     wat: String,
+
+    /// wasmでのmemoryの初期値
+    #[arg(long, default_value = "2")]
+    memory_size: String,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -138,6 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .args([
                         "--target=wasm32-unknown-unknown",
                         "-Wl,--no-entry",
+                        &format!("-Wl,--initial-memory={}",args.memory_size),
                         "-nostdlib",
                         &format!("-{}", args.opt_level),
                         &ll_filename,
@@ -172,6 +177,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .args([
                         "--target=wasm32-wasi",
                         &format!("--sysroot={}", sysroot_path),
+                        &format!("-Wl,--initial-memory={}",args.memory_size),
                         &format!("-{}", args.opt_level),
                         &ll_filename,
                         "-o",

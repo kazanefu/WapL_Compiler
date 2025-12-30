@@ -1698,14 +1698,16 @@ impl<'ctx> Codegen<'ctx> {
                     let (arr_val, arr_ty, arr_ptr_opt) =
                         self.compile_expr(&args[0], variables).unwrap();
 
-                    let arr_ptr = match &arr_ty{
-                        Expr::TypeApply { base, args: _ } if base.starts_with("array_") => arr_ptr_opt.expect("[array] requires array lvalue").ptr,
+                    let arr_ptr = match &arr_ty {
+                        Expr::TypeApply { base, args: _ } if base.starts_with("array_") => {
+                            arr_ptr_opt.expect("[array] requires array lvalue").ptr
+                        }
                         Expr::TypeApply { base, args: _ }
-                                        if base == "ptr"
-                                            || base == "&"
-                                            || base == "&mut"
-                                            || base == "*" => arr_val.into_pointer_value(),
-                        _ => panic!("[array] require pointer or array_N:T ")
+                            if base == "ptr" || base == "&" || base == "&mut" || base == "*" =>
+                        {
+                            arr_val.into_pointer_value()
+                        }
+                        _ => panic!("[array] require pointer or array_N:T "),
                     };
 
                     let mut last_ptr = arr_ptr;
@@ -3012,6 +3014,22 @@ impl<'ctx> Codegen<'ctx> {
                         .unwrap()
                         .into()
                 } else {
+                    v.into()
+                }
+            }
+            // float to float
+            (BasicTypeEnum::FloatType(to), BasicTypeEnum::FloatType(from)) => {
+                let to_bw = float_bit_width(to);
+                let from_bw = float_bit_width(from);
+                let v = value.into_float_value();
+                if from_bw < to_bw {
+                    self.builder.build_float_ext(v, to, "fext").unwrap().into()
+                } else if from_bw > to_bw {
+                    self.builder
+                        .build_float_trunc(v, to, "ftrunc")
+                        .unwrap()
+                        .into()
+                }else{
                     v.into()
                 }
             }

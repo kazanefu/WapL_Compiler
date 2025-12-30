@@ -252,12 +252,14 @@ input = "src/main.wapl"
 output = "target/$NAME"
 opt = "O2"
 clang = "clang"
+bitsize = "64"
 
 [release]
 input = "src/main.wapl"
 output = "target/$NAME"
 opt = "O3"
 clang = "clang"
+bitsize = "64"
 
 [wasm]
 input = "src/main.wapl"
@@ -280,8 +282,9 @@ EOFTOML
     OUT=$(read_toml build output "$TOML")
     OPT=$(read_toml build opt "$TOML")
     CLANG=$(read_toml build clang "$TOML")
+    BITSIZE=$(read_toml wasm bitsize "$TOML")
     mkdir -p "./target"
-    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG"
+    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG" --bitsize "$BITSIZE"
     echo "Build complete: $OUT"
     ;;
 
@@ -291,8 +294,9 @@ EOFTOML
     OUT=$(read_toml release output "$TOML")
     OPT=$(read_toml release opt "$TOML")
     CLANG=$(read_toml release clang "$TOML")
+    BITSIZE=$(read_toml wasm bitsize "$TOML")
     mkdir -p "./target"
-    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG"
+    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG" --bitsize "$BITSIZE"
     echo "Build complete: $OUT"
     ;;
 
@@ -380,6 +384,7 @@ EOFTOML
     echo "  new <name>"
     echo "  build"
     echo "  std_load"
+    echo "  get_lib"
     echo "  run"
     ;;
 esac

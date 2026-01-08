@@ -11,34 +11,35 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-/// WapLコンパイラ(llvm irを作ってそれをclangで実行ファイルにする)
+/// WapL Compiler (generates LLVM IR and compiles it to an executable using clang)
 #[derive(clap::Parser, Debug)]
 #[command(author, version, about)]
 struct Args {
-    /// 入力するWapL (.wapl) ファイル
+    /// Input WapL (.wapl) file
     #[arg(short, long)]
     input: String,
 
-    /// 出力ファイル名
+    /// Output filename
     #[arg(short, long, default_value = "a.out")]
     output: String,
 
-    /// 最適化レベル (O0, O1, O2, O3, Os, Oz)
+    /// Optimization level (O0, O1, O2, O3, Os, Oz)
     #[arg(short = 'O', long = "opt", default_value = "O2")]
     opt_level: String,
 
-    /// clang のパス (環境PATHに通ってる場合は不要)
+    /// Path to clang (not needed if in PATH)
     #[arg(long, default_value = "clang")]
     clang: String,
-    /// デバッグ用にトークン列とASTを表示
+
+    /// Display tokens and AST for debugging
     #[arg(short, long)]
     debug: bool,
 
-    /// 実行ファイルなし
+    /// Generate LLVM IR only (no executable)
     #[arg(long)]
     ir: bool,
 
-    /// bit数(isizeのサイズ)
+    /// bit size (size of isize)
     #[arg(long, default_value = "64")]
     bitsize: String,
 
@@ -50,22 +51,22 @@ struct Args {
     #[arg(long)]
     browser: bool,
 
-    /// sysroot
+    /// sysroot for WASI
     #[arg(
         long,
         default_value = "$HOME/wasi-sdk-29.0-x86_64-linux/share/wasi-sysroot"
     )]
     sysroot: String,
 
-    /// wasm2wat のパス (環境PATHに通ってる場合は不要)
+    /// Path to wasm2wat (not needed if in PATH)
     #[arg(long, default_value = "wasm2wat")]
     wasm2wat: String,
 
-    /// output wat
+    /// output wat filename
     #[arg(long, default_value = "a.wat")]
     wat: String,
 
-    /// wasmでのmemoryの初期値
+    /// Initial memory size for WASM
     #[arg(long, default_value = "655360")]
     memory_size: String,
 }
@@ -73,13 +74,15 @@ struct Args {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     if Path::new(&args.input).exists() {
-        //ファイル読み込み
+        // Read file
         let filename = &args.input;
-        let source = fs::read_to_string(filename).expect("ファイルを読み込めませんでした");
-        //字句解析
+        let source = fs::read_to_string(filename).expect("Could not read file");
+
+        // Lexical analysis
         let mut tokenizer = Tokenizer::new(source.as_str());
         let tokens = tokenizer.tokenize();
-        //デバッグ用にトークン出力
+
+        // Output tokens for debugging
         if args.debug {
             println!("Tokens");
             let mut j = 0;
@@ -89,11 +92,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        //構文解析
+        // Parsing
         let mut import_map: Vec<String> = Vec::new();
         let mut parser = parser::Parser::new(tokens, 0);
         let (parsed, _) = parser.parse_program(&mut import_map);
-        //デバッグ用にAST出力
+
+        // Output AST for debugging
         if args.debug {
             println!("AST");
             let mut j = 0;
@@ -103,12 +107,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        //IR作成
+        // IR generation
         let context = Context::create();
-        let mut codegen = Codegen::new(&context, "wapl_module", args.bitsize.clone(), args.wasm,args.browser);
+        let mut codegen = Codegen::new(
+            &context,
+            "wapl_module",
+            args.bitsize.clone(),
+            args.wasm,
+            args.browser,
+        );
         codegen.compile_program(parsed);
 
-        // 出力.ll名
+        // Output .ll filename
         let ll_filename = filename.replace(".wapl", ".ll");
         codegen.module.print_to_file(&ll_filename).unwrap();
 
@@ -117,6 +127,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if !Path::new(&ll_filename).exists() {
             return Err(format!("LLVM IR file not found: {}", ll_filename).into());
         }
+
         if !args.ir {
             let clang_path = args.clang.replace("$HOME", &env::var("HOME")?);
             let status = Command::new(&clang_path)
@@ -134,15 +145,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             println!("Build success! → {}", args.output);
         }
+
         if args.wasm {
             if args.browser {
                 let clang_path = args.clang.replace("$HOME", &env::var("HOME")?);
-                // ① clang
+                // 1. clang
                 let status = Command::new(&clang_path)
                     .args([
                         "--target=wasm32-unknown-unknown",
                         "-Wl,--no-entry",
-                        &format!("-Wl,--initial-memory={}",args.memory_size),
+                        &format!("-Wl,--initial-memory={}", args.memory_size),
                         "-nostdlib",
                         &format!("-{}", args.opt_level),
                         &ll_filename,
@@ -157,7 +169,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let wasm2wat_path = args.wasm2wat.replace("$HOME", &env::var("HOME")?);
 
-                // ② wasm2wat
+                // 2. wasm2wat
                 let status = Command::new(&wasm2wat_path)
                     .args([&args.output, "-o", &args.wat])
                     .status()?;
@@ -172,12 +184,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 let sysroot_path = args.sysroot.replace("$HOME", &env::var("HOME")?);
                 let clang_path = args.clang.replace("$HOME", &env::var("HOME")?);
-                // ① clang
+                // 1. clang
                 let status = Command::new(&clang_path)
                     .args([
                         "--target=wasm32-wasi",
                         &format!("--sysroot={}", sysroot_path),
-                        &format!("-Wl,--initial-memory={}",args.memory_size),
+                        &format!("-Wl,--initial-memory={}", args.memory_size),
                         &format!("-{}", args.opt_level),
                         &ll_filename,
                         "-o",
@@ -191,7 +203,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let wasm2wat_path = args.wasm2wat.replace("$HOME", &env::var("HOME")?);
 
-                // ② wasm2wat
+                // 2. wasm2wat
                 let status = Command::new(&wasm2wat_path)
                     .args([&args.output, "-o", &args.wat])
                     .status()?;
@@ -208,7 +220,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         Ok(())
     } else {
-        println!("コンパイルするファイルを指定してください");
+        println!("Please specify a file to compile");
         return Err(format!("Input file not found: {}", args.input).into());
     }
 }

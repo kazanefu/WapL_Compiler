@@ -1,12 +1,12 @@
 [package]
 name = "waplc"
-version = "0.2.17"
+version = "0.1.0-sugar"
 edition = "2024"
 
 [dependencies]
 inkwell = { version = "0.7.1", features = ["llvm21-1"] }
-clap = { version = "4", features = ["derive"] }
-colored = "2"
+clap = { version = "4.5.54", features = ["derive"] }
+colored = "3.0.0"
 
 [[bin]]
 name = "waplc"

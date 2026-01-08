@@ -3409,7 +3409,7 @@ impl<'ctx> Codegen<'ctx> {
 
             // Generate value
             let val = self.compile_expr(elem, variables).unwrap();
-            
+
             let gep = unsafe {
                 self.builder
                     .build_gep(

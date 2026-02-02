@@ -85,10 +85,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Output tokens for debugging
         if args.debug {
             println!("Tokens");
-            let mut j = 0;
-            for i in &tokens {
+            for (j, i) in tokens.iter().enumerate() {
                 println!("{j}:{:?}", i);
-                j += 1;
             }
         }
 
@@ -100,10 +98,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Output AST for debugging
         if args.debug {
             println!("AST");
-            let mut j = 0;
-            for i in &parsed.functions {
+            for (j, i) in parsed.functions.iter().enumerate() {
                 println!("{j}:{:?}", i);
-                j += 1;
             }
         }
 
@@ -221,6 +217,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     } else {
         println!("Please specify a file to compile");
-        return Err(format!("Input file not found: {}", args.input).into());
+        Err(format!("Input file not found: {}", args.input).into())
     }
 }

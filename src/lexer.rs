@@ -47,7 +47,7 @@ pub enum Token {
     Rsep(RSeparator),
 
     /// End of file
-    EOF,
+    Eof,
 }
 /// Left-side separator tokens.
 #[derive(Debug, Clone, PartialEq)]
@@ -201,7 +201,7 @@ impl Tokenizer {
 
         let ch = match self.next_char() {
             Some(c) => c,
-            None => return Token::EOF,
+            None => return Token::Eof,
         };
 
         // ----- String literal -----
@@ -324,7 +324,7 @@ impl Tokenizer {
             ')' => Token::Rsep(RSeparator::RParen),
             '{' => Token::Lsep(LSeparator::LBrace),
             '}' => Token::Rsep(RSeparator::RBrace),
-            _ => Token::EOF,
+            _ => Token::Eof,
         }
     }
 
@@ -334,7 +334,7 @@ impl Tokenizer {
 
         loop {
             let t = self.next_token();
-            if t == Token::EOF {
+            if t == Token::Eof {
                 break;
             }
             tokens.push(t);

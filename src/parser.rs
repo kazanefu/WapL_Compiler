@@ -174,21 +174,15 @@ impl Parser {
 
     /// Consumes a comma if it's the current token.
     fn consume_comma(&mut self) {
-        match self.peek() {
-            Some(Token::Comma) => {
-                self.next();
-            }
-            _ => {}
+        if let Some(Token::Comma) = self.peek() {
+            self.next();
         }
     }
 
     /// Consumes a semicolon if it's the current token.
     fn consume_semicolon(&mut self) {
-        match self.peek() {
-            Some(Token::Semicolon) => {
-                self.next();
-            }
-            _ => {}
+        if let Some(Token::Semicolon) = self.peek() {
+            self.next();
         }
     }
 
@@ -196,11 +190,11 @@ impl Parser {
     fn connect_use(&mut self, import_map: &mut Vec<String>, funcs: &mut Vec<TopLevel>) {
         self.no_return_next();
         let mut top_count = self.toplevel_counter;
-        let Token::StringLiteral(path) = self.next().unwrap_or(&Token::EOF) else {
+        let Token::StringLiteral(path) = self.next().unwrap_or(&Token::Eof) else {
             return;
         };
         let source = fs::read_to_string(path).expect("Could not read file");
-        if import_map.contains(&path) {
+        if import_map.contains(path) {
             return;
         }
         let mut tokenizer = Tokenizer::new(source.as_str());

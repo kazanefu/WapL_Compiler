@@ -196,11 +196,8 @@ impl Tokenizer {
 
     /// Returns the next token in the input stream.
     pub fn next_token(&mut self) -> Token {
-        loop {
-            self.skip_whitespace();
-            self.skip_comment();
-            break;
-        }
+        self.skip_whitespace();
+        self.skip_comment();
 
         let ch = match self.next_char() {
             Some(c) => c,

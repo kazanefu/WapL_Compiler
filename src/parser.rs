@@ -101,6 +101,7 @@ pub struct Struct {
 pub struct Program {
     pub functions: Vec<TopLevel>, // functions, structs, and top-level expressions
     pub has_main: bool,
+    pub need_main: bool,
 }
 
 /// The WapL Parser.
@@ -258,6 +259,7 @@ impl Parser {
             Program {
                 functions: funcs,
                 has_main: self.has_main,
+                need_main:true,
             },
             self.toplevel_counter,
         )

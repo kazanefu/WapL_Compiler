@@ -308,7 +308,7 @@ EOFTOML
     CLANG=$(read_toml build clang "$TOML")
     BITSIZE=$(read_toml build bitsize "$TOML")
     mkdir -p "./target"
-    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG" --bitsize "$BITSIZE -c --no-entry"
+    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG" --bitsize "$BITSIZE" -c --no-entry
     echo "Build complete: $OUT"
     ;;
 

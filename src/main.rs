@@ -71,7 +71,7 @@ struct Args {
     memory_size: String,
 
     /// Compile only(Output .o file)
-    #[arg(long,short)]
+    #[arg(long, short)]
     compile_only: bool,
 
     /// no entry point
@@ -153,24 +153,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         command.arg("-c");
     }
 
-
-    if !args.ir {
-        let status = command
-            .args([
-                &ll_filename,
-                "-o",
-                &args.output,
-                &format!("-{}", args.opt_level),
-            ])
-            .status()?;
-
-        if !status.success() {
-            return Err("clang failed to compile".into());
-        }
-
-        println!("Build success! → {}", args.output);
-    }
-
     if args.wasm {
         if args.browser {
             // 1. clang
@@ -205,6 +187,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("WASM Build success!");
             println!("  wasm → {}", args.output);
             println!("  wat  → {}", args.wat);
+            return Ok(());
         } else {
             let sysroot_path = args.sysroot.replace("$HOME", &env::var("HOME")?);
             // 1. clang
@@ -238,7 +221,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("WASM Build success!");
             println!("  wasm → {}", args.output);
             println!("  wat  → {}", args.wat);
+            return Ok(());
         }
+    }
+
+    if !args.ir {
+        let status = command
+            .args([
+                &ll_filename,
+                "-o",
+                &args.output,
+                &format!("-{}", args.opt_level),
+            ])
+            .status()?;
+
+        if !status.success() {
+            return Err("clang failed to compile".into());
+        }
+
+        println!("Build success! → {}", args.output);
     }
 
     Ok(())

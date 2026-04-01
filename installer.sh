@@ -299,6 +299,18 @@ EOFTOML
     "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG" --bitsize "$BITSIZE"
     echo "Build complete: $OUT"
     ;;
+  
+  build_lib)
+    TOML="wapl.toml"
+    SRC=$(read_toml build input "$TOML")
+    OUT=$(read_toml build output "$TOML")
+    OPT=$(read_toml build opt "$TOML")
+    CLANG=$(read_toml build clang "$TOML")
+    BITSIZE=$(read_toml build bitsize "$TOML")
+    mkdir -p "./target"
+    "$HOME/.wapl/bin/waplc" -i "$SRC" -o "$OUT" -O "$OPT" --clang "$CLANG" --bitsize "$BITSIZE -c --no-entry"
+    echo "Build complete: $OUT"
+    ;;
 
   wasm)
     TOML="wapl.toml"

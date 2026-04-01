@@ -120,6 +120,7 @@ impl<'ctx> Codegen<'ctx> {
         bitsize: String,
         wasm: bool,
         browser: bool,
+        no_c:bool
     ) -> Self {
         Target::initialize_all(&InitializationConfig::default());
         let module = context.create_module(name);
@@ -170,7 +171,7 @@ impl<'ctx> Codegen<'ctx> {
             this.module
                 .set_data_layout(&tm.get_target_data().get_data_layout());
         }
-        if !browser {
+        if !browser && !no_c {
             this.init_external_functions(); // declare C functions  
         }
 
@@ -204,7 +205,9 @@ impl<'ctx> Codegen<'ctx> {
                 }
             }
         }
-        combine_toplevel(&self.module, &self.builder, program.has_main);
+        if program.need_main{
+            combine_toplevel(&self.module, &self.builder, program.has_main);
+        }
     }
     /// Compiles an exported function, making it visible to external modules (e.g., WASM exports).
     fn compile_export(&mut self, export: Export) {
